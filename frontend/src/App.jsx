@@ -122,7 +122,12 @@ function App() {
   const ready = Boolean(fileId && validation?.valid);
 
   return (
-    <div className="app-shell">
+    <div className="product-shell">
+      <header className="product-header">
+        <div className="product-brand"><span className="product-logo">▥</span><strong>ReportGen</strong></div>
+        <div className="analyst-menu"><button aria-label="Help">?</button><span className="avatar">DP</span><span><strong>Deepti</strong><small>Analyst</small></span><b>⌄</b></div>
+      </header>
+      <div className="app-shell">
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark">RG</span><div><strong>ReportGen</strong><small>Analyst workspace</small></div></div>
         <nav aria-label="Workflow steps">
@@ -142,9 +147,12 @@ function App() {
         {notice && <div className="alert success">{notice}</div>}
 
         {step === 0 && (
-          <section className="panel-grid two">
-            <article className="card hero-card"><p className="eyebrow">Reporting account</p><h2>{customer?.customer_name || "Alpha Solar"}</h2><p>Configure the customer and report type that own mappings, formulas, questions, and insight rules.</p><div className="metric-strip"><div><span>Customer ID</span><strong>{customerId}</strong></div><div><span>Status</span><strong>{humanize(customer?.status || "ready")}</strong></div><div><span>Reports</span><strong>{customer?.report_count || 0}</strong></div></div></article>
-            <article className="card form-card"><label>Customer<select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>{customers.map((item) => <option key={item.customer_id} value={item.customer_id}>{item.customer_name}</option>)}</select></label><label>Report type<select value={reportType} onChange={(e) => setReportType(e.target.value)}><option value="daily_generation">Daily generation</option></select></label><Button onClick={() => setStep(1)}>Continue to upload</Button></article>
+          <section className="customer-profile">
+            <article className="card selector-card"><label>Select customer<select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>{customers.map((item) => <option key={item.customer_id} value={item.customer_id}>{item.customer_name}</option>)}</select></label><Button secondary>＋ Add customer</Button><label>Report type<select value={reportType} onChange={(e) => setReportType(e.target.value)}><option value="daily_generation">Daily Generation Report</option></select></label></article>
+            <div className="panel-grid three summary-cards"><article className="card"><span>Last 180 reports</span><strong>{customer?.report_count || 0}</strong><small>Generated successfully</small></article><article className="card"><span>Status</span><strong className="setup-status">{humanize(customer?.status || "setup in progress")}</strong><small>Continue setup to generate reports</small></article><article className="card"><span>Customer memory</span><strong className="memory-saved">✓ Customer memory saved</strong><small>Preferences will be remembered</small></article></div>
+            <div className="panel-grid two profile-memory"><article className="card"><h3>Preferred KPIs</h3><div className="tag-list"><span>PR</span><span>Specific Yield</span><span>Curtailment Loss</span></div></article><article className="card"><h3>Standing Questions</h3><ul>{(profile?.customer_questions || []).slice(0, 4).map((item) => <li key={item.question_id || item.question_text}>{item.question_text}</li>)}</ul></article></div>
+            <div className="panel-grid two profile-memory"><article className="card"><h3>Approved Formula Store</h3>{(profile?.derivable || []).filter((item) => item.approved_by_analyst).slice(0, 3).map((item) => <div className="memory-row" key={item.metric_name}><span>{item.metric_name}</span><Status tone="success">Approved</Status></div>)}{!(profile?.derivable || []).some((item) => item.approved_by_analyst) && <p className="muted-line">No formulas approved yet</p>}</article><article className="card"><h3>Approved Rules</h3>{(profile?.insight_rules || []).filter((item) => item.approved_by_analyst).slice(0, 3).map((item) => <div className="memory-row" key={item.rule_id || item.rule_name}><span>{item.rule_name}</span><Status tone="success">Approved</Status></div>)}{!(profile?.insight_rules || []).some((item) => item.approved_by_analyst) && <p className="muted-line">No insight rules approved yet</p>}</article></div>
+            <div className="info-banner">ⓘ Chart and layout preferences can be configured after draft review.</div>
           </section>
         )}
 
@@ -181,8 +189,9 @@ function App() {
           </section>
         )}
 
-        <footer><Button secondary disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))}>Back</Button><span>Step {step + 1} of {STEPS.length}</span><Button secondary disabled={step === STEPS.length - 1} onClick={() => setStep((value) => Math.min(STEPS.length - 1, value + 1))}>Next</Button></footer>
+        <footer><div className="progress-saved">✓ Progress saved. You can return to any previous step.</div><div className="footer-actions"><Button secondary disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))}>Back</Button><span>Step {step + 1} of {STEPS.length}</span><Button disabled={step === STEPS.length - 1} onClick={() => setStep((value) => Math.min(STEPS.length - 1, value + 1))}>{step === 0 ? "Save & Continue" : "Continue"} →</Button></div></footer>
       </main>
+      </div>
     </div>
   );
 }
