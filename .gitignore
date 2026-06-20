@@ -12,3 +12,4 @@ outputs/charts/
 outputs/reports/
 
 frontend/node_modules/
+frontend/dist/

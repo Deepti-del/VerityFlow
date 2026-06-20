@@ -4,11 +4,13 @@ from typing import Any
 
 import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
 from answer_planner import build_answer_plan
 from calculator import calculate_daily_kpis_from_excel
 from charts import build_chart_specs
 from database import (
+    approve_customer_question,
     approve_insight_rule,
     get_calculation_profile,
     get_connection,
@@ -17,9 +19,12 @@ from database import (
 )
 from formula_service import add_custom_formula, approve_suggested_formula
 from insights import generate_insights
+from mapper import confirm_mappings
 from models import (
     ApproveFormulaRequest,
     ApproveInsightRuleRequest,
+    ApproveMappingsRequest,
+    ApproveQuestionRequest,
     CalculateRequest,
     CalculationResponse,
     ProfileResponse,
@@ -33,6 +38,13 @@ from validator import validate_workbook
 
 
 app = FastAPI(title="ReportGen API", version="0.1.0")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _http_error(status_code: int, message: str) -> HTTPException:
@@ -299,6 +311,31 @@ def approve_formula_endpoint(request: ApproveFormulaRequest):
         raise _http_error(400, result.get("message", "Formula approval failed."))
 
     return result
+
+
+@app.post("/approve/mappings")
+def approve_mappings_endpoint(request: ApproveMappingsRequest):
+    if not request.mappings:
+        raise _http_error(400, "At least one mapping is required.")
+    confirm_mappings(request.customer_id, request.mappings)
+    return {
+        "ok": True,
+        "customer_id": request.customer_id,
+        "confirmed_count": len(request.mappings),
+    }
+
+
+@app.post("/approve/question")
+def approve_question_endpoint(request: ApproveQuestionRequest):
+    return approve_customer_question(
+        question_text=request.question_text,
+        answer_purpose=request.answer_purpose,
+        required_metrics=request.required_metrics,
+        preferred_components=request.preferred_components,
+        scope=request.scope,
+        customer_id=request.customer_id,
+        report_type=request.report_type,
+    )
 
 
 def _load_rule_by_id(rule_id: int) -> dict[str, Any] | None:

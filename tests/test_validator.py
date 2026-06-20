@@ -43,6 +43,7 @@ def test_validate_workbook_reports_missing_required_sheet():
 
 def test_validate_daily_kpis_rejects_non_numeric_required_value():
     df = pd.read_excel(DATA_PATH, sheet_name="daily_kpis")
+    df["generation_kwh"] = df["generation_kwh"].astype(object)
     df.loc[0, "generation_kwh"] = "not numeric"
 
     result = validate_daily_kpis_sheet(df, customer_id="alpha_solar")

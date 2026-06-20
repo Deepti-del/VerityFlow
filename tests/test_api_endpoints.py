@@ -163,6 +163,51 @@ def test_approve_insight_rule_endpoint(monkeypatch, tmp_path):
     assert saved_rule["thresholds"] == {"min_pr_percent": 65}
 
 
+def test_approve_mappings_endpoint(monkeypatch, tmp_path):
+    client = _setup_api(monkeypatch, tmp_path)
+
+    response = client.post(
+        "/approve/mappings",
+        json={
+            "customer_id": "alpha_solar",
+            "mappings": [
+                {
+                    "system_column": "generation_kwh",
+                    "customer_column": "generation_kwh",
+                    "data_type": "numeric",
+                }
+            ],
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["confirmed_count"] == 1
+
+
+def test_approve_question_endpoint(monkeypatch, tmp_path):
+    client = _setup_api(monkeypatch, tmp_path)
+
+    response = client.post(
+        "/approve/question",
+        json={
+            "question_text": "What caused the PR change?",
+            "required_metrics": ["pr_percent"],
+            "preferred_components": ["pr_trend_chart"],
+            "scope": "customer_report_type",
+            "customer_id": "alpha_solar",
+            "report_type": "daily_generation",
+        },
+    )
+
+    assert response.status_code == 200
+    saved = [
+        item for item in response.json()["questions"]
+        if item["question_text"] == "What caused the PR change?"
+    ][0]
+    assert saved["approved_by_analyst"] is True
+    assert saved["preferred_components"] == ["pr_trend_chart"]
+
+
 def test_upload_rejects_unsupported_file_type(monkeypatch, tmp_path):
     client = _setup_api(monkeypatch, tmp_path)
 

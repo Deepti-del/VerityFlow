@@ -48,6 +48,21 @@ class ApproveInsightRuleRequest(BaseModel):
     report_type: str | None = None
 
 
+class ApproveMappingsRequest(BaseModel):
+    customer_id: str
+    mappings: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ApproveQuestionRequest(BaseModel):
+    question_text: str
+    answer_purpose: str | None = None
+    required_metrics: list[str] = Field(default_factory=list)
+    preferred_components: list[str] = Field(default_factory=list)
+    scope: Scope = "customer_report_type"
+    customer_id: str
+    report_type: str
+
+
 class UploadResponse(BaseModel):
     file_id: str
     filename: str
