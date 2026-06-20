@@ -41,10 +41,31 @@ function App() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [question, setQuestion] = useState("");
+  const [mappingProfile, setMappingProfile] = useState(null);
+  const [mappingDrafts, setMappingDrafts] = useState({});
+  const [mappingSearch, setMappingSearch] = useState("");
+  const [formulaProfile, setFormulaProfile] = useState(null);
+  const [formulaDraft, setFormulaDraft] = useState(null);
+  const [formulaValidation, setFormulaValidation] = useState(null);
 
   const loadProfile = async () => {
     const data = await api.profile(customerId, reportType);
     setProfile(data);
+    return data;
+  };
+
+  const loadMappings = async () => {
+    const data = await api.mappings(customerId);
+    setMappingProfile(data);
+    setMappingDrafts(Object.fromEntries(
+      (data.mappings || []).map((item) => [item.system_column, item.customer_column]),
+    ));
+    return data;
+  };
+
+  const loadFormulas = async () => {
+    const data = await api.formulas(customerId, reportType);
+    setFormulaProfile(data);
     return data;
   };
 
@@ -53,11 +74,12 @@ function App() {
   }, []);
 
   useEffect(() => {
-    loadProfile().catch((e) => setError(e.message));
+    Promise.all([loadProfile(), loadMappings(), loadFormulas()])
+      .catch((e) => setError(e.message));
   }, [customerId, reportType]);
 
   const customer = customers.find((item) => item.customer_id === customerId);
-  const mappings = validation?.summary?.sheets?.daily_kpis?.mapping?.mapped || [];
+  const mappings = mappingProfile?.mappings || [];
   const draft = calculation?.draft || {};
   const kpis = calculation?.kpis || {};
 
@@ -85,21 +107,94 @@ function App() {
     setStep(5);
   }, "Draft assembled from approved calculations and rules.");
 
-  const confirmMappings = () => run(async () => {
-    const payload = mappings.map((item) => ({
-      system_column: item.system_col, customer_column: item.customer_col, data_type: "numeric",
-    }));
-    await api.approveMappings({ customer_id: customerId, mappings: payload });
-    await validateWorkbook();
-  }, "Mappings confirmed by analyst.");
-
   const approveFormula = (metric) => run(async () => {
     await api.approveFormula({
       customer_id: customerId, report_type: reportType, metric_name: metric.metric_name,
       output_column: metric.output_column, input_columns: metric.input_columns || [], scope: "customer_report_type",
     });
-    await loadProfile();
+    await Promise.all([loadProfile(), loadFormulas()]);
   }, `${metric.metric_name} approved.`);
+
+  const saveMapping = (mapping) => run(async () => {
+    const customerColumn = (mappingDrafts[mapping.system_column] || "").trim();
+    if (!customerColumn) throw new Error("Customer column cannot be blank.");
+    await api.approveMappings({
+      customer_id: customerId,
+      mappings: [{
+        system_column: mapping.system_column,
+        customer_column: customerColumn,
+        data_type: mapping.data_type,
+      }],
+    });
+    await loadMappings();
+  }, `${mapping.system_column} mapping saved and confirmed.`);
+
+  const resetMapping = (mapping) => run(async () => {
+    await api.resetMappings({
+      customer_id: customerId,
+      system_columns: [mapping.system_column],
+    });
+    await loadMappings();
+  }, `${mapping.system_column} now needs analyst confirmation.`);
+
+  const openFormulaEditor = (metric = null) => {
+    setFormulaValidation(null);
+    setFormulaDraft(metric ? {
+      metric_name: metric.metric_name || "",
+      output_column: metric.output_column || "",
+      formula: metric.formula || "",
+      input_columns: (metric.input_columns || []).join(", "),
+      unit: metric.unit || "",
+      good_range: metric.good_range || "",
+      poor_threshold: metric.poor_threshold || "",
+      scope: metric.scope || "customer_report_type",
+    } : {
+      metric_name: "", output_column: "", formula: "", input_columns: "",
+      unit: "", good_range: "", poor_threshold: "", scope: "customer_report_type",
+    });
+  };
+
+  const formulaInputs = () => (formulaDraft?.input_columns || "")
+    .split(",").map((item) => item.trim()).filter(Boolean);
+
+  const validateFormulaDraft = async () => {
+    setBusy(true); setError(""); setFormulaValidation(null);
+    try {
+      const result = await api.validateFormula({
+        customer_id: customerId,
+        report_type: reportType,
+        metric_name: formulaDraft.metric_name,
+        formula: formulaDraft.formula,
+        input_columns: formulaInputs(),
+      });
+      setFormulaValidation(result);
+      return result;
+    } catch (e) {
+      setError(e.message);
+      return null;
+    } finally { setBusy(false); }
+  };
+
+  const saveFormula = async () => {
+    const validationResult = await validateFormulaDraft();
+    if (!validationResult?.valid) return;
+    await run(async () => {
+      await api.approveFormula({
+        customer_id: customerId,
+        report_type: reportType,
+        metric_name: formulaDraft.metric_name.trim(),
+        output_column: formulaDraft.output_column.trim(),
+        formula: formulaDraft.formula.trim(),
+        input_columns: formulaInputs(),
+        unit: formulaDraft.unit.trim() || null,
+        good_range: formulaDraft.good_range.trim() || null,
+        poor_threshold: formulaDraft.poor_threshold.trim() || null,
+        scope: formulaDraft.scope,
+      });
+      await Promise.all([loadProfile(), loadFormulas()]);
+      setFormulaDraft(null); setFormulaValidation(null);
+    }, `${formulaDraft.metric_name} formula saved and approved.`);
+  };
 
   const approveRule = (rule) => run(async () => {
     await api.approveRule({
@@ -120,6 +215,11 @@ function App() {
 
   const pageTitle = STEPS[step][0];
   const ready = Boolean(fileId && validation?.valid);
+  const filteredMappings = mappings.filter((item) => {
+    const query = mappingSearch.trim().toLowerCase();
+    return !query || item.system_column.toLowerCase().includes(query)
+      || item.customer_column.toLowerCase().includes(query);
+  });
 
   return (
     <div className="product-shell">
@@ -172,9 +272,12 @@ function App() {
         )}
 
         {step === 3 && (
-          <section>
-            <article className="card section-head"><div><h2>Mapping & formula approval</h2><p>The analyst owns how customer columns become standard metrics and how derived KPIs are calculated.</p></div>{mappings.length > 0 && <Button onClick={confirmMappings}>Confirm {mappings.length} mappings</Button>}</article>
-            <div className="panel-grid two"><article className="card"><h3>Column mappings</h3>{mappings.length ? <div className="table-list">{mappings.map((item) => <div className="table-row" key={item.system_col}><span>{item.customer_col}</span><b>→</b><strong>{item.system_col}</strong><Status tone={item.confirmed ? "success" : "warn"}>{item.confirmed ? "Confirmed" : "Review"}</Status></div>)}</div> : <Empty>Run validation to inspect workbook mappings.</Empty>}</article><article className="card"><h3>Derived KPI formulas</h3>{profile?.derivable?.map((metric) => <div className="approval-row" key={metric.metric_name}><div><strong>{metric.metric_name}</strong><code>{metric.formula}</code></div>{metric.approved_by_analyst ? <Status tone="success">Approved</Status> : <Button secondary onClick={() => approveFormula(metric)}>Approve</Button>}</div>)}</article></div>
+          <section className="configuration-workspace">
+            <article className="card section-head"><div><h2>Mapping & formula approval</h2><p>Review saved customer mappings independently of an upload, and validate every formula before it becomes trusted calculation logic.</p></div><div className="configuration-summary"><Status tone={mappingProfile?.all_confirmed ? "success" : "warn"}>{mappingProfile?.confirmed_count || 0}/{mappingProfile?.mapping_count || 0} mappings confirmed</Status><Status tone={(formulaProfile?.approved_count || 0) === (formulaProfile?.formula_count || 0) ? "success" : "warn"}>{formulaProfile?.approved_count || 0}/{formulaProfile?.formula_count || 0} formulas approved</Status></div></article>
+            <div className="panel-grid config-grid"><article className="card mapping-editor"><div className="card-title-row"><div><h3>Customer column mappings</h3><p>Changes are saved only when you explicitly confirm them.</p></div><input aria-label="Search mappings" value={mappingSearch} onChange={(e) => setMappingSearch(e.target.value)} placeholder="Search mappings" /></div>{filteredMappings.length ? <div className="mapping-table"><div className="mapping-table-head"><span>Standard metric</span><span>Customer column</span><span>Type</span><span>Status</span><span>Actions</span></div>{filteredMappings.map((item) => { const changed = mappingDrafts[item.system_column] !== item.customer_column; return <div className="mapping-edit-row" key={item.system_column}><strong>{item.system_column}</strong><input aria-label={`${item.system_column} customer column`} value={mappingDrafts[item.system_column] ?? ""} onChange={(e) => setMappingDrafts((current) => ({ ...current, [item.system_column]: e.target.value }))} /><span>{item.data_type}</span><Status tone={item.confirmed_by_analyst ? "success" : "warn"}>{item.confirmed_by_analyst ? "Confirmed" : "Needs review"}</Status><div className="row-actions"><button disabled={busy || (!changed && item.confirmed_by_analyst)} onClick={() => saveMapping(item)}>Save</button><button className="quiet" disabled={busy || !item.confirmed_by_analyst} onClick={() => resetMapping(item)}>Reset</button></div></div>; })}</div> : <Empty>No saved mappings match this search.</Empty>}</article>
+              <article className="card formula-library"><div className="card-title-row"><div><h3>Derived KPI formulas</h3><p>System suggestions remain inactive until an analyst approves them.</p></div><Button secondary onClick={() => openFormulaEditor()}>＋ New formula</Button></div>{(formulaProfile?.formulas || []).map((metric) => <div className="formula-row" key={metric.output_column}><div><strong>{metric.metric_name}</strong><code>{metric.formula}</code><small>{(metric.input_columns || []).join(" + ")} · {metric.unit || "No unit"} · {humanize(metric.scope)}</small></div><div className="formula-actions"><Status tone={metric.approved_by_analyst ? "success" : "warn"}>{metric.approved_by_analyst ? "Approved" : "Suggested"}</Status><button onClick={() => openFormulaEditor(metric)}>Edit</button>{!metric.approved_by_analyst && <button className="approve-link" onClick={() => approveFormula(metric)}>Approve</button>}</div></div>)}</article>
+            </div>
+            {formulaDraft && <article className="card formula-editor"><div className="card-title-row"><div><h3>{formulaDraft.output_column ? `Edit ${formulaDraft.metric_name}` : "Create a new calculated KPI"}</h3><p>The formula is parsed safely and checked against available mapped metrics before saving.</p></div><button className="close-editor" onClick={() => { setFormulaDraft(null); setFormulaValidation(null); }}>×</button></div><div className="formula-form"><label>KPI name<input value={formulaDraft.metric_name} onChange={(e) => setFormulaDraft({ ...formulaDraft, metric_name: e.target.value })} /></label><label>Output column<input value={formulaDraft.output_column} onChange={(e) => setFormulaDraft({ ...formulaDraft, output_column: e.target.value })} /></label><label className="formula-field">Formula<input value={formulaDraft.formula} onChange={(e) => { setFormulaDraft({ ...formulaDraft, formula: e.target.value }); setFormulaValidation(null); }} placeholder="generation_kwh / dc_capacity_kwp" /></label><label className="formula-field">Input columns<input value={formulaDraft.input_columns} onChange={(e) => { setFormulaDraft({ ...formulaDraft, input_columns: e.target.value }); setFormulaValidation(null); }} placeholder="generation_kwh, dc_capacity_kwp" /></label><label>Unit<input value={formulaDraft.unit} onChange={(e) => setFormulaDraft({ ...formulaDraft, unit: e.target.value })} /></label><label>Good range<input value={formulaDraft.good_range} onChange={(e) => setFormulaDraft({ ...formulaDraft, good_range: e.target.value })} /></label><label>Poor threshold<input value={formulaDraft.poor_threshold} onChange={(e) => setFormulaDraft({ ...formulaDraft, poor_threshold: e.target.value })} /></label><label>Remember for<select value={formulaDraft.scope} onChange={(e) => setFormulaDraft({ ...formulaDraft, scope: e.target.value })}><option value="customer_report_type">This customer + report type</option><option value="customer">This customer</option><option value="report_type">All Daily Generation reports</option><option value="global">Global</option></select></label></div><div className="available-columns"><span>Available metrics</span>{(formulaProfile?.available_columns || []).map((column) => <code key={column}>{column}</code>)}</div>{formulaValidation && <div className={`formula-validation ${formulaValidation.valid ? "valid" : "invalid"}`}>{formulaValidation.valid ? "✓" : "!"} {formulaValidation.message}</div>}<div className="actions"><Button secondary disabled={busy} onClick={validateFormulaDraft}>Validate formula</Button><Button disabled={busy || !formulaDraft.metric_name.trim() || !formulaDraft.output_column.trim() || !formulaDraft.formula.trim()} onClick={saveFormula}>Validate & save approval</Button></div></article>}
             <div className="actions"><Button secondary onClick={() => setStep(4)}>Continue to questions & rules</Button></div>
           </section>
         )}

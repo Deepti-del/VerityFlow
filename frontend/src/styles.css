@@ -200,3 +200,56 @@ footer { position: sticky; z-index: 10; bottom: 0; max-width: none; margin: 26px
   footer { margin-left: -14px; margin-right: -14px; padding: 10px 14px; }
   .progress-saved { display: none; }
 }
+
+/* Mapping and formula control workspace */
+.configuration-summary { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.config-grid { grid-template-columns: minmax(0, 1.35fr) minmax(330px, .85fr); align-items: start; }
+.card-title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-bottom: 14px; }
+.card-title-row h3 { margin-bottom: 4px; }
+.card-title-row p { margin: 0; font-size: 10px; line-height: 1.5; }
+.card-title-row > input { width: 180px; padding: 8px 10px; font-size: 10px; }
+.mapping-table { overflow-x: auto; border: 1px solid #e2e7ee; border-radius: 5px; }
+.mapping-table-head, .mapping-edit-row { min-width: 690px; display: grid; grid-template-columns: 1.15fr 1.2fr .55fr .72fr 1fr; gap: 10px; align-items: center; }
+.mapping-table-head { padding: 9px 10px; background: #f4f6f9; color: #6b778c; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+.mapping-edit-row { padding: 8px 10px; border-top: 1px solid #edf0f4; font-size: 10px; }
+.mapping-edit-row:first-of-type { border-top: 0; }
+.mapping-edit-row strong { color: #344563; overflow-wrap: anywhere; }
+.mapping-edit-row > input { padding: 7px 8px; font-size: 10px; }
+.mapping-edit-row > span:not(.status) { color: #7a869a; text-transform: capitalize; }
+.row-actions { display: flex; gap: 5px; }
+.row-actions button, .formula-actions button, .close-editor { padding: 5px 8px; border: 1px solid #b8c2d1; border-radius: 4px; background: #fff; color: #0747a6; font-size: 9px; font-weight: 700; cursor: pointer; }
+.row-actions button:disabled { cursor: not-allowed; opacity: .35; }
+.row-actions .quiet { color: #6b778c; }
+.formula-library { max-height: 650px; overflow-y: auto; }
+.formula-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 0; border-bottom: 1px solid #edf0f4; }
+.formula-row:last-child { border-bottom: 0; }
+.formula-row strong, .formula-row code, .formula-row small { display: block; }
+.formula-row strong { color: #344563; font-size: 11px; }
+.formula-row code { margin-top: 5px; color: #0747a6; font-size: 10px; white-space: normal; overflow-wrap: anywhere; }
+.formula-row small { margin-top: 5px; color: #8993a4; font-size: 9px; }
+.formula-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; }
+.formula-actions .approve-link { border-color: #36b37e; color: #14804a; }
+.formula-editor { margin-top: 14px; border-color: #b3d4ff; background: #fbfdff; }
+.formula-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.formula-form label { font-size: 10px; }
+.formula-form input, .formula-form select { padding: 8px 9px; font-size: 10px; }
+.formula-form .formula-field { grid-column: span 2; }
+.close-editor { width: 28px; height: 28px; padding: 0; border-radius: 50%; font-size: 18px; font-weight: 400; }
+.available-columns { margin-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.available-columns > span { margin-right: 4px; color: #6b778c; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.available-columns code { padding: 4px 6px; border-radius: 3px; background: #eef2f7; color: #42526e; font-size: 8px; }
+.formula-validation { margin-top: 14px; padding: 9px 11px; border-radius: 4px; font-size: 10px; }
+.formula-validation.valid { border: 1px solid #abf5d1; background: #e3fcef; color: #14804a; }
+.formula-validation.invalid { border: 1px solid #ffbdad; background: #ffebe6; color: #ae2a19; }
+
+@media (max-width: 1120px) {
+  .config-grid { grid-template-columns: 1fr; }
+  .formula-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .configuration-summary { justify-content: flex-start; }
+  .card-title-row { flex-direction: column; }
+  .card-title-row > input { width: 100%; }
+  .formula-form { grid-template-columns: 1fr; }
+  .formula-form .formula-field { grid-column: auto; }
+}

@@ -18,8 +18,9 @@ from database import (
     get_insight_rules,
 )
 from formula_service import add_custom_formula, approve_suggested_formula
+from formula_utils import validate_formula
 from insights import generate_insights
-from mapper import confirm_mappings
+from mapper import confirm_mappings, get_saved_mappings, reset_mappings
 from models import (
     ApproveFormulaRequest,
     ApproveInsightRuleRequest,
@@ -28,9 +29,11 @@ from models import (
     CalculateRequest,
     CalculationResponse,
     ProfileResponse,
+    ResetMappingsRequest,
     UploadResponse,
     ValidateRequest,
     ValidationResponse,
+    ValidateFormulaRequest,
 )
 from report_draft import assemble_report_draft
 from storage import get_upload_path, save_upload
@@ -274,6 +277,45 @@ def customers():
     return {"customers": rows}
 
 
+def _profile_columns(profile: dict) -> list[str]:
+    columns = []
+    for category in ("required_source", "derivable", "optional", "reference"):
+        columns.extend(
+            metric["output_column"]
+            for metric in profile.get(category, [])
+            if metric.get("output_column")
+        )
+    return list(dict.fromkeys(columns))
+
+
+@app.get("/formulas/{customer_id}/{report_type}")
+def formulas(customer_id: str, report_type: str):
+    profile = get_calculation_profile(customer_id, report_type)
+    formulas = profile.get("derivable", [])
+    return {
+        "customer_id": customer_id,
+        "report_type": report_type,
+        "formulas": formulas,
+        "formula_count": len(formulas),
+        "approved_count": sum(
+            bool(metric.get("approved_by_analyst")) for metric in formulas
+        ),
+        "available_columns": _profile_columns(profile),
+    }
+
+
+@app.post("/formulas/validate")
+def validate_formula_endpoint(request: ValidateFormulaRequest):
+    profile = get_calculation_profile(request.customer_id, request.report_type)
+    available_columns = request.available_columns or _profile_columns(profile)
+    return validate_formula(
+        request.formula,
+        available_columns=available_columns,
+        input_columns=request.input_columns,
+        metric_name=request.metric_name,
+    )
+
+
 @app.post("/approve/formula")
 def approve_formula_endpoint(request: ApproveFormulaRequest):
     customer_id = request.customer_id
@@ -284,6 +326,10 @@ def approve_formula_endpoint(request: ApproveFormulaRequest):
     if request.formula:
         if not request.output_column:
             raise _http_error(400, "output_column is required for a custom formula.")
+        profile = get_calculation_profile(customer_id, report_type)
+        available_columns = list(dict.fromkeys(
+            _profile_columns(profile) + request.input_columns
+        ))
         result = add_custom_formula(
             customer_id=customer_id,
             report_type=report_type,
@@ -291,7 +337,7 @@ def approve_formula_endpoint(request: ApproveFormulaRequest):
             output_column=request.output_column,
             formula=request.formula,
             input_columns=request.input_columns,
-            available_columns=request.input_columns,
+            available_columns=available_columns,
             unit=request.unit,
             good_range=request.good_range,
             poor_threshold=request.poor_threshold,
@@ -317,12 +363,28 @@ def approve_formula_endpoint(request: ApproveFormulaRequest):
 def approve_mappings_endpoint(request: ApproveMappingsRequest):
     if not request.mappings:
         raise _http_error(400, "At least one mapping is required.")
-    confirm_mappings(request.customer_id, request.mappings)
+    confirm_mappings(
+        request.customer_id,
+        [mapping.model_dump() for mapping in request.mappings],
+    )
     return {
         "ok": True,
         "customer_id": request.customer_id,
         "confirmed_count": len(request.mappings),
     }
+
+
+@app.get("/mappings/{customer_id}")
+def mappings(customer_id: str):
+    return get_saved_mappings(customer_id)
+
+
+@app.post("/mappings/reset")
+def reset_mappings_endpoint(request: ResetMappingsRequest):
+    result = reset_mappings(request.customer_id, request.system_columns)
+    if not result.get("ok"):
+        raise _http_error(400, result["message"])
+    return result
 
 
 @app.post("/approve/question")

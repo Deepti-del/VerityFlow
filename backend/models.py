@@ -48,9 +48,29 @@ class ApproveInsightRuleRequest(BaseModel):
     report_type: str | None = None
 
 
+class MappingUpdate(BaseModel):
+    system_column: str = Field(min_length=1)
+    customer_column: str = Field(min_length=1)
+    data_type: str = "numeric"
+
+
 class ApproveMappingsRequest(BaseModel):
     customer_id: str
-    mappings: list[dict[str, Any]] = Field(default_factory=list)
+    mappings: list[MappingUpdate] = Field(default_factory=list)
+
+
+class ResetMappingsRequest(BaseModel):
+    customer_id: str
+    system_columns: list[str] = Field(default_factory=list)
+
+
+class ValidateFormulaRequest(BaseModel):
+    customer_id: str
+    report_type: str = "daily_generation"
+    metric_name: str
+    formula: str
+    input_columns: list[str] = Field(default_factory=list)
+    available_columns: list[str] = Field(default_factory=list)
 
 
 class ApproveQuestionRequest(BaseModel):

@@ -66,6 +66,64 @@ def get_column_mappings(customer_id: str) -> dict:
     }
 
 
+def get_saved_mappings(customer_id: str) -> dict:
+    """Returns every saved mapping for independent analyst review."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT mapping_id, customer_id, system_column, customer_column,
+               data_type, confirmed_by_analyst, created_at, updated_at
+        FROM schema_mappings
+        WHERE customer_id = ?
+        ORDER BY system_column
+    """, (customer_id,))
+    mappings = []
+    for row in cursor.fetchall():
+        item = dict(row)
+        item["confirmed_by_analyst"] = bool(item["confirmed_by_analyst"])
+        mappings.append(item)
+    conn.close()
+    return {
+        "customer_id": customer_id,
+        "mappings": mappings,
+        "mapping_count": len(mappings),
+        "confirmed_count": sum(item["confirmed_by_analyst"] for item in mappings),
+        "all_confirmed": bool(mappings) and all(
+            item["confirmed_by_analyst"] for item in mappings
+        ),
+    }
+
+
+def reset_mappings(customer_id: str, system_columns: list[str]) -> dict:
+    """Marks selected mappings unconfirmed without discarding mapping history."""
+    unique_columns = list(dict.fromkeys(system_columns))
+    if not unique_columns:
+        return {
+            "ok": False,
+            "reason": "no_system_columns",
+            "message": "Select at least one mapping to reset.",
+        }
+
+    placeholders = ", ".join("?" for _ in unique_columns)
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(f"""
+        UPDATE schema_mappings
+        SET confirmed_by_analyst = 0, updated_at = CURRENT_TIMESTAMP
+        WHERE customer_id = ? AND system_column IN ({placeholders})
+    """, (customer_id, *unique_columns))
+    reset_count = cursor.rowcount
+    conn.commit()
+    conn.close()
+
+    return {
+        "ok": True,
+        "customer_id": customer_id,
+        "system_columns": unique_columns,
+        "reset_count": reset_count,
+    }
+
+
 def apply_mapping(df: pd.DataFrame, customer_id: str) -> dict:
     """
     Maps customer column names to standard system column names.

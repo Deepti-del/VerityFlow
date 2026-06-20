@@ -184,6 +184,136 @@ def test_approve_mappings_endpoint(monkeypatch, tmp_path):
     assert response.json()["confirmed_count"] == 1
 
 
+def test_get_and_reset_saved_mappings(monkeypatch, tmp_path):
+    client = _setup_api(monkeypatch, tmp_path)
+
+    response = client.get("/mappings/alpha_solar")
+    assert response.status_code == 200
+    body = response.json()
+    generation = [
+        item for item in body["mappings"]
+        if item["system_column"] == "generation_kwh"
+    ][0]
+    assert generation["customer_column"] == "generation_kwh"
+    assert generation["confirmed_by_analyst"] is True
+    assert body["confirmed_count"] == 18
+
+    reset_response = client.post(
+        "/mappings/reset",
+        json={
+            "customer_id": "alpha_solar",
+            "system_columns": ["generation_kwh"],
+        },
+    )
+    assert reset_response.status_code == 200
+    assert reset_response.json()["reset_count"] == 1
+
+    refreshed = client.get("/mappings/alpha_solar").json()
+    generation = [
+        item for item in refreshed["mappings"]
+        if item["system_column"] == "generation_kwh"
+    ][0]
+    assert generation["confirmed_by_analyst"] is False
+
+
+def test_reset_mappings_requires_selection(monkeypatch, tmp_path):
+    client = _setup_api(monkeypatch, tmp_path)
+    response = client.post(
+        "/mappings/reset",
+        json={"customer_id": "alpha_solar", "system_columns": []},
+    )
+    assert response.status_code == 400
+    assert "Select at least one mapping" in response.json()["detail"]
+
+
+def test_mapping_update_rejects_blank_columns(monkeypatch, tmp_path):
+    client = _setup_api(monkeypatch, tmp_path)
+    response = client.post(
+        "/approve/mappings",
+        json={
+            "customer_id": "alpha_solar",
+            "mappings": [{
+                "system_column": "generation_kwh",
+                "customer_column": "",
+                "data_type": "numeric",
+            }],
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_formula_retrieval_validation_and_edit(monkeypatch, tmp_path):
+    client = _setup_api(monkeypatch, tmp_path)
+
+    response = client.get("/formulas/alpha_solar/daily_generation")
+    assert response.status_code == 200
+    body = response.json()
+    specific_yield = [
+        item for item in body["formulas"]
+        if item["output_column"] == "specific_yield_kwh_per_kwp"
+    ][0]
+    assert specific_yield["formula"] == "generation_kwh / dc_capacity_kwp"
+    assert specific_yield["approved_by_analyst"] is False
+    assert "generation_kwh" in body["available_columns"]
+
+    validation = client.post(
+        "/formulas/validate",
+        json={
+            "customer_id": "alpha_solar",
+            "report_type": "daily_generation",
+            "metric_name": "Specific Yield",
+            "formula": "generation_kwh / dc_capacity_kwp",
+            "input_columns": ["generation_kwh", "dc_capacity_kwp"],
+        },
+    )
+    assert validation.status_code == 200
+    assert validation.json()["valid"] is True
+
+    edit = client.post(
+        "/approve/formula",
+        json={
+            "metric_name": "Specific Yield",
+            "formula": "generation_kwh / dc_capacity_kwp * 1.0",
+            "unit": "kWh/kWp",
+            "good_range": "3.5-5.0",
+            "poor_threshold": "<3.0",
+            "scope": "customer_report_type",
+            "customer_id": "alpha_solar",
+            "report_type": "daily_generation",
+            "output_column": "specific_yield_kwh_per_kwp",
+            "input_columns": ["generation_kwh", "dc_capacity_kwp"],
+        },
+    )
+    assert edit.status_code == 200
+    assert edit.json()["action"] == "saved_custom_formula"
+
+    refreshed = client.get("/formulas/alpha_solar/daily_generation").json()
+    specific_yield = [
+        item for item in refreshed["formulas"]
+        if item["output_column"] == "specific_yield_kwh_per_kwp"
+    ][0]
+    assert specific_yield["approved_by_analyst"] is True
+    assert specific_yield["scope"] == "customer_report_type"
+    assert specific_yield["formula"] == "generation_kwh / dc_capacity_kwp * 1.0"
+
+
+def test_formula_validation_rejects_undeclared_column(monkeypatch, tmp_path):
+    client = _setup_api(monkeypatch, tmp_path)
+    response = client.post(
+        "/formulas/validate",
+        json={
+            "customer_id": "alpha_solar",
+            "report_type": "daily_generation",
+            "metric_name": "Specific Yield",
+            "formula": "generation_kwh / missing_capacity",
+            "input_columns": ["generation_kwh", "dc_capacity_kwp"],
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["valid"] is False
+    assert response.json()["reason"] == "formula_references_undeclared_columns"
+
+
 def test_approve_question_endpoint(monkeypatch, tmp_path):
     client = _setup_api(monkeypatch, tmp_path)
 

@@ -21,7 +21,15 @@ export const api = {
   calculate: (body) => request("/calculate", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }),
+  mappings: (customerId) => request(`/mappings/${customerId}`),
   approveMappings: (body) => request("/approve/mappings", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  }),
+  resetMappings: (body) => request("/mappings/reset", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  }),
+  formulas: (customerId, reportType) => request(`/formulas/${customerId}/${reportType}`),
+  validateFormula: (body) => request("/formulas/validate", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }),
   approveFormula: (body) => request("/approve/formula", {
