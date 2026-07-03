@@ -6,9 +6,9 @@ The current MVP focuses on a daily solar generation report. It validates an uplo
 
 ## Product Demo
 
-[![Watch the one-minute ReportGen walkthrough](docs/images/reportgen-demo-cover.png)](docs/demo/ReportGen-full-demo-condensed.mp4)
+![ReportGen product walkthrough preview](docs/images/reportgen-demo-preview.gif)
 
-**[Watch the one-minute walkthrough](docs/demo/ReportGen-full-demo-condensed.mp4)**
+**[Download the full one-minute walkthrough](https://raw.githubusercontent.com/Deepti-del/ReportGen/main/docs/demo/ReportGen-full-demo-condensed.mp4)**
 
 The demo follows the complete analyst workflow: upload, deterministic validation, customer mappings, approved formulas, reusable questions and rules, evidence-backed draft generation, chart configuration, narrative editing, and final review.
 
