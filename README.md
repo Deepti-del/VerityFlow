@@ -1,8 +1,16 @@
 # ReportGen
 
-ReportGen is a backend-first prototype for generating intelligent solar performance reports from analyst-prepared data.
+ReportGen is an analyst-controlled prototype for generating intelligent solar performance reports from trusted operational data.
 
-The current MVP focuses on a daily solar generation report. It validates an uploaded workbook, maps customer columns, calculates KPIs, runs analyst-approved insight rules, plans answers to customer questions, prepares chart specs, and assembles a report draft JSON for a future frontend.
+The current MVP focuses on a daily solar generation report. It validates an uploaded workbook, maps customer columns, calculates KPIs, runs analyst-approved insight rules, plans answers to customer questions, prepares evidence, and assembles an editable report draft for analyst approval.
+
+## Product Demo
+
+[![Watch the one-minute ReportGen walkthrough](docs/images/reportgen-demo-cover.png)](docs/demo/ReportGen-full-demo-condensed.mp4)
+
+**[Watch the one-minute walkthrough](docs/demo/ReportGen-full-demo-condensed.mp4)**
+
+The demo follows the complete analyst workflow: upload, deterministic validation, customer mappings, approved formulas, reusable questions and rules, evidence-backed draft generation, chart configuration, narrative editing, and final review.
 
 ## Intended Users
 
