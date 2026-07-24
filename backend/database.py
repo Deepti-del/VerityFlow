@@ -20,6 +20,8 @@ def create_tables():
     CREATE TABLE IF NOT EXISTS customers (
         customer_id         TEXT PRIMARY KEY,
         customer_name       TEXT NOT NULL,
+        parent_company      TEXT,
+        customer_reference  TEXT,
         logo_path           TEXT,
         pr_target_pct       REAL DEFAULT 75.0,
         recipients          TEXT DEFAULT '[]',
@@ -27,6 +29,35 @@ def create_tables():
         status              TEXT DEFAULT 'pending_first_approval',
         created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS customer_sites (
+        site_id             TEXT PRIMARY KEY,
+        customer_id         TEXT NOT NULL,
+        site_name           TEXT NOT NULL,
+        location            TEXT,
+        timezone            TEXT NOT NULL DEFAULT 'Asia/Kolkata',
+        dc_capacity_kwp     REAL,
+        ac_capacity_kw      REAL,
+        status              TEXT DEFAULT 'active',
+        created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS report_configurations (
+        config_id            TEXT PRIMARY KEY,
+        customer_id          TEXT NOT NULL,
+        site_id              TEXT NOT NULL,
+        report_type          TEXT NOT NULL,
+        configuration_name   TEXT NOT NULL,
+        reporting_period     TEXT NOT NULL DEFAULT 'daily',
+        active               INTEGER DEFAULT 1,
+        created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (customer_id) REFERENCES customers(customer_id),
+        FOREIGN KEY (site_id) REFERENCES customer_sites(site_id),
+        UNIQUE(site_id, report_type, configuration_name)
     );
 
     CREATE TABLE IF NOT EXISTS schema_mappings (
@@ -79,6 +110,46 @@ def create_tables():
         created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS report_layouts (
+        layout_id           TEXT PRIMARY KEY,
+        config_id           TEXT NOT NULL,
+        customer_id         TEXT NOT NULL,
+        report_type         TEXT NOT NULL,
+        version             INTEGER NOT NULL DEFAULT 1,
+        status              TEXT NOT NULL DEFAULT 'draft',
+        theme               TEXT NOT NULL DEFAULT 'corporate_blue',
+        summary_position    TEXT NOT NULL DEFAULT 'top',
+        layout_json         TEXT NOT NULL DEFAULT '{}',
+        created_by          TEXT NOT NULL DEFAULT 'analyst',
+        approved_by         TEXT,
+        approved_at         DATETIME,
+        created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (config_id) REFERENCES report_configurations(config_id),
+        FOREIGN KEY (customer_id) REFERENCES customers(customer_id),
+        UNIQUE(config_id, version)
+    );
+
+    CREATE TABLE IF NOT EXISTS report_snapshots (
+        snapshot_id          TEXT PRIMARY KEY,
+        config_id            TEXT NOT NULL,
+        customer_id          TEXT NOT NULL,
+        report_type          TEXT NOT NULL,
+        report_date          DATE NOT NULL,
+        layout_id            TEXT NOT NULL,
+        layout_version       INTEGER NOT NULL,
+        revision             INTEGER NOT NULL DEFAULT 1,
+        snapshot_json        TEXT NOT NULL,
+        approved_by          TEXT NOT NULL,
+        approved_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        supersedes_snapshot_id TEXT,
+        FOREIGN KEY (config_id) REFERENCES report_configurations(config_id),
+        FOREIGN KEY (customer_id) REFERENCES customers(customer_id),
+        FOREIGN KEY (layout_id) REFERENCES report_layouts(layout_id),
+        FOREIGN KEY (supersedes_snapshot_id) REFERENCES report_snapshots(snapshot_id),
+        UNIQUE(config_id, report_date, revision)
     );
 
     CREATE TABLE IF NOT EXISTS metric_dictionary (
@@ -163,13 +234,36 @@ def create_tables():
         COALESCE(customer_id, ''),
         COALESCE(report_type, '')
     );
+
+    CREATE INDEX IF NOT EXISTS idx_report_layouts_current
+    ON report_layouts (config_id, status, version DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_report_snapshots_report
+    ON report_snapshots (config_id, report_date, revision DESC);
     """)
 
+    ensure_customer_columns(cursor)
     ensure_metric_dictionary_columns(cursor)
 
     conn.commit()
     conn.close()
     print("All tables created successfully")
+
+
+def ensure_customer_columns(cursor):
+    cursor.execute("PRAGMA table_info(customers)")
+    existing_columns = {row["name"] for row in cursor.fetchall()}
+
+    migrations = {
+        "parent_company": "ALTER TABLE customers ADD COLUMN parent_company TEXT",
+        "customer_reference": (
+            "ALTER TABLE customers ADD COLUMN customer_reference TEXT"
+        ),
+    }
+
+    for column, statement in migrations.items():
+        if column not in existing_columns:
+            cursor.execute(statement)
 
 
 def ensure_metric_dictionary_columns(cursor):
@@ -191,6 +285,198 @@ def ensure_metric_dictionary_columns(cursor):
     for column, statement in migrations.items():
         if column not in existing_columns:
             cursor.execute(statement)
+
+
+def _decode_json_fields(row: sqlite3.Row | dict | None, *fields: str):
+    if row is None:
+        return None
+    result = dict(row)
+    for field in fields:
+        value = result.get(field)
+        if isinstance(value, str):
+            try:
+                result[field] = json.loads(value)
+            except json.JSONDecodeError:
+                result[field] = {}
+    return result
+
+
+def get_report_layout(config_id: str, include_draft: bool = True) -> dict | None:
+    conn = get_connection()
+    cursor = conn.cursor()
+    status_filter = "" if include_draft else "AND status = 'approved'"
+    cursor.execute(f"""
+        SELECT *
+        FROM report_layouts
+        WHERE config_id = ? {status_filter}
+        ORDER BY CASE status WHEN 'draft' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END,
+                 version DESC
+        LIMIT 1
+    """, (config_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return _decode_json_fields(row, "layout_json")
+
+
+def save_report_layout_draft(
+    *,
+    layout_id: str,
+    config_id: str,
+    customer_id: str,
+    report_type: str,
+    theme: str,
+    summary_position: str,
+    layout: dict,
+    create_revision: bool = False,
+    created_by: str = "analyst",
+) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT *
+        FROM report_layouts
+        WHERE config_id = ?
+        ORDER BY version DESC
+        LIMIT 1
+    """, (config_id,))
+    latest = cursor.fetchone()
+
+    if latest and latest["status"] == "draft":
+        cursor.execute("""
+            UPDATE report_layouts
+            SET theme = ?, summary_position = ?, layout_json = ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE layout_id = ?
+        """, (
+            theme,
+            summary_position,
+            json.dumps(layout),
+            latest["layout_id"],
+        ))
+        saved_layout_id = latest["layout_id"]
+    else:
+        if latest and not create_revision:
+            conn.close()
+            raise ValueError(
+                "The approved layout is locked. Create a new layout version to make changes."
+            )
+        version = int(latest["version"]) + 1 if latest else 1
+        cursor.execute("""
+            INSERT INTO report_layouts
+            (layout_id, config_id, customer_id, report_type, version, status,
+             theme, summary_position, layout_json, created_by)
+            VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)
+        """, (
+            layout_id,
+            config_id,
+            customer_id,
+            report_type,
+            version,
+            theme,
+            summary_position,
+            json.dumps(layout),
+            created_by,
+        ))
+        saved_layout_id = layout_id
+
+    conn.commit()
+    cursor.execute(
+        "SELECT * FROM report_layouts WHERE layout_id = ?",
+        (saved_layout_id,),
+    )
+    saved = cursor.fetchone()
+    conn.close()
+    return _decode_json_fields(saved, "layout_json")
+
+
+def approve_report_layout(layout_id: str, approved_by: str) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT * FROM report_layouts WHERE layout_id = ?",
+        (layout_id,),
+    )
+    layout = cursor.fetchone()
+    if layout is None:
+        conn.close()
+        raise ValueError("Report layout not found.")
+    if layout["status"] == "approved":
+        conn.close()
+        return _decode_json_fields(layout, "layout_json")
+
+    cursor.execute("""
+        UPDATE report_layouts
+        SET status = 'superseded', updated_at = CURRENT_TIMESTAMP
+        WHERE config_id = ? AND status = 'approved'
+    """, (layout["config_id"],))
+    cursor.execute("""
+        UPDATE report_layouts
+        SET status = 'approved', approved_by = ?,
+            approved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+        WHERE layout_id = ?
+    """, (approved_by, layout_id))
+    conn.commit()
+    cursor.execute(
+        "SELECT * FROM report_layouts WHERE layout_id = ?",
+        (layout_id,),
+    )
+    approved = cursor.fetchone()
+    conn.close()
+    return _decode_json_fields(approved, "layout_json")
+
+
+def create_report_snapshot(
+    *,
+    snapshot_id: str,
+    config_id: str,
+    customer_id: str,
+    report_type: str,
+    report_date: str,
+    layout: dict,
+    snapshot: dict,
+    approved_by: str,
+) -> dict:
+    if layout.get("status") != "approved":
+        raise ValueError("Approve the report layout before approving the report.")
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT snapshot_id, revision
+        FROM report_snapshots
+        WHERE config_id = ? AND report_date = ?
+        ORDER BY revision DESC
+        LIMIT 1
+    """, (config_id, report_date))
+    previous = cursor.fetchone()
+    revision = int(previous["revision"]) + 1 if previous else 1
+    cursor.execute("""
+        INSERT INTO report_snapshots
+        (snapshot_id, config_id, customer_id, report_type, report_date,
+         layout_id, layout_version, revision, snapshot_json, approved_by,
+         supersedes_snapshot_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """, (
+        snapshot_id,
+        config_id,
+        customer_id,
+        report_type,
+        report_date,
+        layout["layout_id"],
+        layout["version"],
+        revision,
+        json.dumps(snapshot),
+        approved_by,
+        previous["snapshot_id"] if previous else None,
+    ))
+    conn.commit()
+    cursor.execute(
+        "SELECT * FROM report_snapshots WHERE snapshot_id = ?",
+        (snapshot_id,),
+    )
+    saved = cursor.fetchone()
+    conn.close()
+    return _decode_json_fields(saved, "snapshot_json")
 
 
 def save_metric_definition(cursor, metric: dict):
@@ -407,6 +693,38 @@ def seed_default_data():
         (customer_id, customer_name, pr_target_pct, status)
         VALUES (?, ?, ?, ?)
     """, ("alpha_solar", "Alpha Solar Power Plant", 75.0, "pending_first_approval"))
+    cursor.execute("""
+        UPDATE customers
+        SET parent_company = COALESCE(parent_company, ?)
+        WHERE customer_id = ?
+    """, ("Alpha Solar Operations", "alpha_solar"))
+    cursor.execute("""
+        INSERT OR IGNORE INTO customer_sites
+        (site_id, customer_id, site_name, location, timezone, dc_capacity_kwp,
+         ac_capacity_kw)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (
+        "alpha_solar_alpha_plant",
+        "alpha_solar",
+        "Alpha Plant",
+        "India",
+        "Asia/Kolkata",
+        135000.0,
+        110000.0,
+    ))
+    cursor.execute("""
+        INSERT OR IGNORE INTO report_configurations
+        (config_id, customer_id, site_id, report_type, configuration_name,
+         reporting_period)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (
+        "alpha_solar_alpha_plant_daily_generation",
+        "alpha_solar",
+        "alpha_solar_alpha_plant",
+        "daily_generation",
+        "Daily Generation Report",
+        "daily",
+    ))
 
     mappings = [
         ("alpha_solar", "inv_power_kw", "inv_power_kw", "numeric", 0),

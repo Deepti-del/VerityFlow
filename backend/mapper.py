@@ -1,8 +1,89 @@
 import os
-
 import pandas as pd
 
-from database import get_connection
+from database import get_calculation_profile, get_connection
+
+
+def _mapping_data_type(system_column: str) -> str:
+    if system_column == "date":
+        return "date"
+    if system_column == "timestamp":
+        return "datetime"
+    if system_column.endswith("_id") or system_column in {"plant_id"}:
+        return "text"
+    return "numeric"
+
+
+def standard_solar_mapping_suggestions(
+    customer_id: str,
+    report_type: str = "daily_generation",
+) -> list[dict]:
+    """
+    Returns ReportGen's standard solar metric mapping candidates.
+
+    These are not analyst-approved mappings. They are the product's known
+    daily-generation schema shown so a new customer never starts from a blank
+    mapping page. The analyst can keep the suggested customer column name,
+    edit it, and then explicitly save approval for that customer.
+    """
+    profile = get_calculation_profile(customer_id, report_type)
+    suggestions = []
+    seen = set()
+
+    for category in ("required_source", "derivable", "optional", "reference"):
+        for metric in profile.get(category, []):
+            system_column = metric.get("output_column")
+            if not system_column or system_column in seen:
+                continue
+            seen.add(system_column)
+            suggestions.append({
+                "mapping_id": None,
+                "customer_id": customer_id,
+                "system_column": system_column,
+                "customer_column": system_column,
+                "data_type": _mapping_data_type(system_column),
+                "column_category": category,
+                "confirmed_by_analyst": False,
+                "created_at": None,
+                "updated_at": None,
+                "source": "standard_solar_suggestion",
+            })
+
+    return sorted(suggestions, key=lambda item: item["system_column"])
+
+
+def initialize_standard_solar_mappings(
+    customer_id: str,
+    report_type: str = "daily_generation",
+) -> int:
+    """
+    Persists unconfirmed standard mapping candidates for a new customer.
+
+    Existing customer-specific mappings are never overwritten.
+    """
+    suggestions = standard_solar_mapping_suggestions(customer_id, report_type)
+    if not suggestions:
+        return 0
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    inserted = 0
+    for suggestion in suggestions:
+        cursor.execute("""
+            INSERT OR IGNORE INTO schema_mappings
+            (customer_id, system_column, customer_column, data_type,
+             confirmed_by_analyst, updated_at)
+            VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+        """, (
+            customer_id,
+            suggestion["system_column"],
+            suggestion["customer_column"],
+            suggestion["data_type"],
+        ))
+        inserted += cursor.rowcount
+    conn.commit()
+    conn.close()
+    return inserted
 
 
 def get_column_mappings(customer_id: str) -> dict:
@@ -31,37 +112,62 @@ def get_column_mappings(customer_id: str) -> dict:
     rows = cursor.fetchall()
     conn.close()
 
-    if not rows:
+    suggestions = standard_solar_mapping_suggestions(customer_id)
+    suggestion_by_system_column = {
+        item["system_column"]: item
+        for item in suggestions
+    }
+    profile_system_columns = set(suggestion_by_system_column)
+    saved_by_system_column = {
+        row["system_column"]: row
+        for row in rows
+        if not profile_system_columns or row["system_column"] in profile_system_columns
+    }
+    all_system_columns = sorted(
+        set(saved_by_system_column) | set(suggestion_by_system_column)
+    )
+    blocking_system_columns = {
+        system_column
+        for system_column, suggestion in suggestion_by_system_column.items()
+        if suggestion.get("column_category") != "derivable"
+    } or set(all_system_columns)
+
+    if not all_system_columns:
         return {
             "mappings": {},
             "confirmed": False,
             "warnings": [f"No column mappings found for customer '{customer_id}'"],
         }
 
-    confirmed_rows = [
-        row for row in rows
-        if row["confirmed_by_analyst"] == 1
-    ]
+    merged_mappings = {}
+    unconfirmed_columns = []
+    for system_column in all_system_columns:
+        row = saved_by_system_column.get(system_column)
+        if row:
+            merged_mappings[system_column] = row["customer_column"]
+            if (
+                system_column in blocking_system_columns
+                and row["confirmed_by_analyst"] != 1
+            ):
+                unconfirmed_columns.append(system_column)
+        else:
+            merged_mappings[system_column] = suggestion_by_system_column[system_column]["customer_column"]
+            if system_column in blocking_system_columns:
+                unconfirmed_columns.append(system_column)
 
-    if confirmed_rows:
+    if not unconfirmed_columns:
         return {
-            "mappings": {
-                row["system_column"]: row["customer_column"]
-                for row in confirmed_rows
-            },
+            "mappings": merged_mappings,
             "confirmed": True,
             "warnings": [],
         }
 
     return {
-        "mappings": {
-            row["system_column"]: row["customer_column"]
-            for row in rows
-        },
+        "mappings": merged_mappings,
         "confirmed": False,
         "warnings": [
             "Column mappings have not been confirmed by analyst. "
-            "Using system suggestions for now."
+            "Using saved mappings and standard solar suggestions for now."
         ],
     }
 
@@ -83,6 +189,15 @@ def get_saved_mappings(customer_id: str) -> dict:
         item["confirmed_by_analyst"] = bool(item["confirmed_by_analyst"])
         mappings.append(item)
     conn.close()
+
+    suggestions = standard_solar_mapping_suggestions(customer_id)
+    saved_system_columns = {item["system_column"] for item in mappings}
+    mappings.extend(
+        suggestion for suggestion in suggestions
+        if suggestion["system_column"] not in saved_system_columns
+    )
+    mappings = sorted(mappings, key=lambda item: item["system_column"])
+
     return {
         "customer_id": customer_id,
         "mappings": mappings,

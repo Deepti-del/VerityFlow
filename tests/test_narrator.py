@@ -18,6 +18,8 @@ def test_generate_narrative_blocks_for_findings_and_questions():
             "pr_percent": 50.88,
             "gti_kwh_m2": 7.49,
             "specific_yield_kwh_per_kwp": 3.805,
+            "prev_day_generation_kwh": 444700,
+            "prev_day_pr_percent": 68.1,
         },
         "triggered_findings": [{
             "rule_name": "PR drop",
@@ -28,6 +30,7 @@ def test_generate_narrative_blocks_for_findings_and_questions():
                 "pr_percent": 50.88,
                 "prev_day_pr_percent": 68.1,
                 "thresholds": {"pr_drop_threshold_pct": 10},
+                "date": "2025-06-14",
             },
         }],
         "answered_questions": [{
@@ -45,6 +48,8 @@ def test_generate_narrative_blocks_for_findings_and_questions():
     assert result["status"] == "ready"
     assert result["narrative_blocks"][0]["type"] == "executive_summary"
     assert "PR 50.88%" in result["narrative_blocks"][0]["text"]
+    assert "PR changed by -25.3%" in result["narrative_blocks"][0]["text"]
+    assert "Approved rules flagged PR drop" in result["narrative_blocks"][0]["text"]
     assert result["narrative_blocks"][1]["title"] == "PR drop"
     assert "Evidence: PR 50.88%" in result["narrative_blocks"][1]["text"]
     assert result["narrative_blocks"][2]["type"] == "question_answer"

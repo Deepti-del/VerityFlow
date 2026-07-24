@@ -9,7 +9,7 @@ BACKEND_DIR = os.path.join(ROOT_DIR, "backend")
 
 sys.path.insert(0, BACKEND_DIR)
 
-from charts import build_chart_specs
+from charts import build_chart_specs, build_report_component
 
 
 def _daily_df():
@@ -91,3 +91,210 @@ def test_loss_breakdown_uses_available_loss_columns():
         "clipping_loss_kwh",
         "total_loss_kwh",
     ]
+
+
+def test_report_component_applies_metric_specific_daily_aggregation():
+    source = pd.DataFrame([
+        {
+            "timestamp": "2025-06-14 10:00:00",
+            "generation_kwh": 100,
+            "gti_wm2": 600,
+            "pr_percent": 70,
+            "cuf_percent": 18,
+        },
+        {
+            "timestamp": "2025-06-14 10:05:00",
+            "generation_kwh": 120,
+            "gti_wm2": 800,
+            "pr_percent": 80,
+            "cuf_percent": 22,
+        },
+    ])
+
+    component = build_report_component(
+        source,
+        component_id="daily_aggregation",
+        title="Daily aggregation",
+        metrics=[
+            "generation_kwh",
+            "gti_wm2",
+            "pr_percent",
+            "cuf_percent",
+        ],
+        chart_type="table",
+        time_grain="daily",
+    )
+
+    row = component["rows"][0]
+    assert row["generation_kwh"] == 220
+    assert row["gti_wm2"] == 700
+    assert row["pr_percent"] == 75
+    assert row["cuf_percent"] == 20
+    assert component["aggregations"] == {
+        "generation_kwh": "sum",
+        "gti_wm2": "average",
+        "pr_percent": "average",
+        "cuf_percent": "average",
+    }
+
+
+def test_heatmap_requires_equipment_breakdown():
+    try:
+        build_report_component(
+            _daily_df(),
+            component_id="invalid_heatmap",
+            title="Invalid heatmap",
+            metrics=["pr_percent"],
+            chart_type="heatmap",
+            breakdown="site_total",
+        )
+    except ValueError as exc:
+        assert "inverter" in str(exc)
+    else:
+        raise AssertionError("Site-total heatmap should have been rejected.")
+
+
+def test_intraday_request_reports_actual_available_date_range():
+    source = pd.DataFrame([
+        {
+            "timestamp": "2025-06-14 10:00:00",
+            "inv_power_kw": 100,
+            "gti_wm2": 600,
+        },
+        {
+            "timestamp": "2025-06-14 11:00:00",
+            "inv_power_kw": 120,
+            "gti_wm2": 800,
+        },
+    ])
+
+    try:
+        build_report_component(
+            pd.DataFrame(),
+            component_id="invalid_intraday_date",
+            title="Inverter Power vs GTI",
+            metrics=["inv_power_kw", "gti_wm2"],
+            chart_type="dual_axis_line",
+            start_date="2025-06-01",
+            end_date="2025-06-01",
+            time_grain="hourly",
+            supplementary_data={"daily_timeseries": source},
+        )
+    except ValueError as exc:
+        assert "2025-06-14 to 2025-06-14" in str(exc)
+    else:
+        raise AssertionError("Out-of-range intraday data should be rejected.")
+
+
+def test_daily_values_cannot_be_presented_as_hourly_data():
+    try:
+        build_report_component(
+            _daily_df(),
+            component_id="invalid_hourly_pr",
+            title="Hourly PR",
+            metrics=["pr_percent"],
+            chart_type="line",
+            time_grain="hourly",
+        )
+    except ValueError as exc:
+        assert "daily values" in str(exc)
+    else:
+        raise AssertionError("Daily KPI data should not become an hourly chart.")
+
+
+def test_heatmap_requires_one_metric():
+    inverter = pd.DataFrame([
+        {
+            "date": "2025-06-14",
+            "inverter_id": "INV-01",
+            "pr_percent": 75,
+            "generation_kwh": 100,
+        },
+    ])
+    try:
+        build_report_component(
+            _daily_df(),
+            component_id="invalid_multi_metric_heatmap",
+            title="Invalid Heatmap",
+            metrics=["pr_percent", "generation_kwh"],
+            chart_type="heatmap",
+            breakdown="inverter",
+            supplementary_data={"inverter_performance": inverter},
+        )
+    except ValueError as exc:
+        assert "exactly one" in str(exc)
+    else:
+        raise AssertionError("A multi-metric heatmap should be rejected.")
+
+
+def test_loss_type_breakdown_uses_loss_event_source():
+    loss_events = pd.DataFrame([
+        {
+            "date": "2025-06-14",
+            "loss_type": "Outage",
+            "estimated_loss_kwh": 120,
+        },
+        {
+            "date": "2025-06-14",
+            "loss_type": "Clipping",
+            "estimated_loss_kwh": 30,
+        },
+    ])
+    component = build_report_component(
+        _daily_df(),
+        component_id="loss_event_table",
+        title="Loss Events",
+        metrics=["estimated_loss_kwh"],
+        chart_type="table",
+        breakdown="loss_type",
+        start_date="2025-06-14",
+        end_date="2025-06-14",
+        supplementary_data={"loss_events": loss_events},
+    )
+
+    assert component["breakdown"] == "loss_type"
+    assert component["columns"] == ["_period", "loss_type", "estimated_loss_kwh"]
+    assert {row["loss_type"] for row in component["rows"]} == {
+        "Clipping",
+        "Outage",
+    }
+
+
+def test_component_evidence_compares_pr_with_previous_day():
+    component = build_report_component(
+        _daily_df(),
+        component_id="daily_pr",
+        title="Daily PR",
+        metrics=["pr_percent"],
+        chart_type="line",
+        start_date="2025-06-14",
+        end_date="2025-06-14",
+        time_grain="daily",
+    )
+
+    evidence = component["evidence_summary"]
+    assert evidence["metrics"]["pr_percent"]["previous_value"] == 76.17
+    assert evidence["metrics"]["pr_percent"]["change_vs_previous_percent"] < 0
+    assert "versus the prior available observation" in evidence["summary"]
+
+
+def test_inverter_heatmap_evidence_identifies_lowest_inverter():
+    inverter = pd.DataFrame([
+        {"date": "2025-06-14", "inverter_id": "INV-01", "pr_percent": 70},
+        {"date": "2025-06-14", "inverter_id": "INV-02", "pr_percent": 55},
+    ])
+    component = build_report_component(
+        _daily_df(),
+        component_id="inverter_pr",
+        title="Inverter PR",
+        metrics=["pr_percent"],
+        chart_type="heatmap",
+        breakdown="inverter",
+        start_date="2025-06-14",
+        end_date="2025-06-14",
+        supplementary_data={"inverter_performance": inverter},
+    )
+
+    metric_evidence = component["evidence_summary"]["metrics"]["pr_percent"]
+    assert metric_evidence["lowest_equipment"] == "INV-02"
+    assert metric_evidence["fleet_average"] == 62.5

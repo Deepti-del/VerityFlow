@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { api } from "./api.js";
+import DraftReview from "./DraftReview.jsx";
 
 const STEPS = [
-  ["Customer Profile", "Choose the reporting context"],
-  ["Upload & Report", "Add the workbook and period"],
+  ["Customer Setup", "Choose the reporting context"],
+  ["Upload & Period", "Add the workbook and period"],
   ["Validate", "Review deterministic data checks"],
   ["Mapping & Formulas", "Confirm calculation inputs"],
   ["Questions & Rules", "Approve the reporting logic"],
@@ -13,6 +14,117 @@ const STEPS = [
 const fmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 const humanize = (value = "") => value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const number = (value, suffix = "") => value == null ? "—" : `${fmt.format(value)}${suffix}`;
+const splitMetrics = (value = "") => value.split(",").map((item) => item.trim()).filter(Boolean);
+
+const palette = ["#0c66e4", "#e05a47", "#36b37e", "#f5a623"];
+const REPORT_THEMES = [
+  ["corporate_blue", "Corporate Blue", "Formal customer-ready reporting"],
+  ["minimal", "Minimal", "Clean and focused on the evidence"],
+  ["executive", "Executive", "Summary and decisions first"],
+  ["operations", "Operations", "Dense technical and operational detail"],
+];
+
+function CartesianChart({ spec }) {
+  const width = 760; const height = 280; const pad = { left: 58, right: 54, top: 20, bottom: 48 };
+  const x = spec.x || []; const series = spec.series || [];
+  const leftSeries = series.filter((item) => item.axis !== "right");
+  const rightSeries = series.filter((item) => item.axis === "right");
+  const maxFor = (items) => Math.max(1, ...items.flatMap((item) => item.y || []).filter((value) => Number.isFinite(Number(value))).map(Number));
+  const stacked = spec.type === "stacked_bar";
+  const stackedMax = stacked
+    ? Math.max(1, ...x.map((_, index) => leftSeries.reduce(
+      (total, item) => total + Math.max(0, Number(item.y?.[index] || 0)),
+      0,
+    )))
+    : 1;
+  const leftMax = stacked ? stackedMax : maxFor(leftSeries); const rightMax = maxFor(rightSeries);
+  const plotW = width - pad.left - pad.right; const plotH = height - pad.top - pad.bottom;
+  const pointX = (index) => pad.left + (x.length <= 1 ? plotW / 2 : (index / (x.length - 1)) * plotW);
+  const pointY = (value, right = false) => pad.top + plotH - (Number(value || 0) / (right ? rightMax : leftMax)) * plotH;
+  const barSeries = series.filter((item) => item.type === "bar");
+  const barWidth = Math.max(3, Math.min(30, plotW / Math.max(x.length, 1) / (stacked ? 1.4 : Math.max(barSeries.length + 1, 2))));
+  const tickIndexes = [...new Set([0, Math.floor((x.length - 1) / 2), x.length - 1])].filter((index) => index >= 0);
+  return <div className="chart-canvas"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={spec.title}>
+    {[0, .25, .5, .75, 1].map((ratio) => <line key={ratio} x1={pad.left} x2={width - pad.right} y1={pad.top + plotH * ratio} y2={pad.top + plotH * ratio} className="grid-line" />)}
+    <text x={pad.left - 8} y={pad.top + 4} textAnchor="end" className="axis-label">{fmt.format(leftMax)}</text><text x={pad.left - 8} y={pad.top + plotH} textAnchor="end" className="axis-label">0</text>
+    {rightSeries.length > 0 && <><text x={width - pad.right + 8} y={pad.top + 4} className="axis-label">{fmt.format(rightMax)}</text><text x={width - pad.right + 8} y={pad.top + plotH} className="axis-label">0</text></>}
+    {series.map((item, seriesIndex) => item.type === "bar" ? (item.y || []).map((value, index) => {
+      const prior = stacked
+        ? series.slice(0, seriesIndex).filter((candidate) => candidate.type === "bar").reduce(
+          (total, candidate) => total + Math.max(0, Number(candidate.y?.[index] || 0)),
+          0,
+        )
+        : 0;
+      const topValue = prior + Number(value || 0);
+      const y = pointY(topValue, item.axis === "right");
+      const bottom = stacked ? pointY(prior, item.axis === "right") : pad.top + plotH;
+      const offset = stacked ? 0 : (seriesIndex - (barSeries.length - 1) / 2) * barWidth;
+      return <rect key={`${item.metric}-${index}`} x={pointX(index) + offset - barWidth / 2} y={y} width={barWidth} height={Math.max(0, bottom - y)} rx="2" fill={palette[seriesIndex % palette.length]} opacity=".85" />;
+    }) : <polyline key={item.metric || item.name} points={(item.y || []).map((value, index) => `${pointX(index)},${pointY(value, item.axis === "right")}`).join(" ")} fill="none" stroke={palette[seriesIndex % palette.length]} strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />)}
+    {tickIndexes.map((index) => <text key={index} x={pointX(index)} y={height - 17} textAnchor="middle" className="axis-label">{String(x[index] ?? "").replace("T", " ").slice(0, 16)}</text>)}
+  </svg><div className="chart-legend">{series.map((item, index) => <span key={item.metric || item.name}><i style={{ background: palette[index % palette.length] }} />{item.name} ({item.unit})</span>)}</div></div>;
+}
+
+function WaterfallChart({ spec }) {
+  const steps = spec.steps || [];
+  const width = 760; const height = 290; const pad = { left: 58, right: 24, top: 24, bottom: 64 };
+  let running = 0;
+  const segments = steps.map((step) => {
+    const value = Number(step.value || 0);
+    let start = 0; let end = value;
+    if (step.type === "relative") {
+      start = running;
+      end = running + value;
+    }
+    if (step.type !== "total") running = end;
+    return { ...step, value, start, end };
+  });
+  const max = Math.max(1, ...segments.flatMap((step) => [step.start, step.end]));
+  const min = Math.min(0, ...segments.flatMap((step) => [step.start, step.end]));
+  const plotH = height - pad.top - pad.bottom;
+  const plotW = width - pad.left - pad.right;
+  const y = (value) => pad.top + ((max - value) / Math.max(max - min, 1)) * plotH;
+  const slot = plotW / Math.max(segments.length, 1);
+  const barWidth = Math.min(72, slot * .58);
+  return <div className="chart-canvas waterfall-svg"><svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={spec.title}>
+    {[0, .25, .5, .75, 1].map((ratio) => <line key={ratio} x1={pad.left} x2={width - pad.right} y1={pad.top + plotH * ratio} y2={pad.top + plotH * ratio} className="grid-line" />)}
+    {segments.map((step, index) => {
+      const x = pad.left + slot * index + slot / 2;
+      const top = y(Math.max(step.start, step.end));
+      const bottom = y(Math.min(step.start, step.end));
+      const tone = step.value < 0 ? "#e05a47" : step.type === "total" ? "#36b37e" : "#0c66e4";
+      const nextX = pad.left + slot * (index + 1) + slot / 2;
+      return <g key={`${step.metric}-${index}`}>
+        <rect x={x - barWidth / 2} y={top} width={barWidth} height={Math.max(2, bottom - top)} rx="3" fill={tone} opacity=".9" />
+        <text x={x} y={Math.max(14, top - 7)} textAnchor="middle" className="axis-label">{fmt.format(step.value)}</text>
+        <text x={x} y={height - 26} textAnchor="middle" className="axis-label">{step.label}</text>
+        {index < segments.length - 1 && <line x1={x + barWidth / 2} x2={nextX - barWidth / 2} y1={y(step.end)} y2={y(step.end)} stroke="#9aa8bc" strokeDasharray="4 3" />}
+      </g>;
+    })}
+  </svg></div>;
+}
+
+function HeatmapPreview({ spec }) {
+  const rows = spec.row_labels || [];
+  const cols = spec.column_labels || [];
+  const values = spec.values || [];
+  const flat = values.flat().filter((value) => Number.isFinite(Number(value))).map(Number);
+  const min = flat.length ? Math.min(...flat) : 0;
+  const max = flat.length ? Math.max(...flat) : 1;
+  const toneFor = (value) => {
+    const ratio = (Number(value) - min) / Math.max(max - min, 1);
+    return ratio < .34 ? "low" : ratio < .67 ? "mid" : "high";
+  };
+  if (!rows.length || !cols.length) return <Empty>No backend heatmap values are available.</Empty>;
+  return <div className="heatmap-preview"><div className="heatmap-note"><strong>{humanize(spec.metric)} by {humanize(spec.row_dimension)}</strong><span>{spec.start_date} to {spec.end_date} · Backend-generated from approved data.</span></div><div className="heatmap-grid" style={{ gridTemplateColumns: `112px repeat(${cols.length}, minmax(90px, 1fr))` }}><span />{cols.map((col) => <b key={col}>{col}</b>)}{rows.flatMap((row, rowIndex) => [<b key={`${row}-label`}>{row}</b>, ...cols.map((col, colIndex) => { const value = values[rowIndex]?.[colIndex]; return <span className={toneFor(value)} key={`${row}-${col}`}>{value == null ? "—" : `${fmt.format(value)}${spec.unit ? ` ${spec.unit}` : ""}`}</span>; })])}</div></div>;
+}
+
+function ChartRenderer({ spec }) {
+  if (spec.type === "waterfall") return <WaterfallChart spec={spec} />;
+  if (spec.type === "heatmap") return <HeatmapPreview spec={spec} />;
+  if (["line", "bar", "dual_axis_line", "bar_line", "stacked_bar"].includes(spec.type)) return <CartesianChart spec={spec} />;
+  return <Empty>Unsupported chart type: {humanize(spec.type)}</Empty>;
+}
 
 function Status({ children, tone = "neutral" }) {
   return <span className={`status ${tone}`}>{children}</span>;
@@ -31,10 +143,43 @@ function App() {
   const [customers, setCustomers] = useState([]);
   const [customerId, setCustomerId] = useState("alpha_solar");
   const [reportType, setReportType] = useState("daily_generation");
+  const [customerMode, setCustomerMode] = useState("existing");
+  const [customerSearch, setCustomerSearch] = useState("");
+  const [customerContext, setCustomerContext] = useState(null);
+  const [selectedConfigId, setSelectedConfigId] = useState("");
+  const [newCustomer, setNewCustomer] = useState({
+    customer_name: "",
+    parent_company: "",
+    customer_reference: "",
+    site_name: "",
+    location: "",
+    timezone: "Asia/Kolkata",
+    dc_capacity_kwp: "",
+    ac_capacity_kw: "",
+    report_type: "daily_generation",
+    reporting_period: "daily",
+    configuration_name: "Daily Generation Report",
+  });
   const [reportDate, setReportDate] = useState("2025-06-14");
   const [profile, setProfile] = useState(null);
   const [file, setFile] = useState(null);
   const [fileId, setFileId] = useState("");
+  const [sourceType, setSourceType] = useState("excel");
+  const [sourceLabel, setSourceLabel] = useState("");
+  const [bigQueryConfig, setBigQueryConfig] = useState({
+    project_id: "demo",
+    dataset_id: "reportgen_demo",
+    plant_id: "alpha_plant",
+    use_demo_data: true,
+    table_map: {
+      daily_kpis: "reportgen_daily_kpis",
+      daily_timeseries: "reportgen_daily_timeseries",
+      inverter_performance: "reportgen_inverter_performance",
+      loss_events: "reportgen_loss_events",
+      plant_metadata: "reportgen_plant_metadata",
+      historical_performance: "reportgen_historical_performance",
+    },
+  });
   const [validation, setValidation] = useState(null);
   const [calculation, setCalculation] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -47,6 +192,20 @@ function App() {
   const [formulaProfile, setFormulaProfile] = useState(null);
   const [formulaDraft, setFormulaDraft] = useState(null);
   const [formulaValidation, setFormulaValidation] = useState(null);
+  const [chartReview, setChartReview] = useState({});
+  const [findingReview, setFindingReview] = useState({});
+  const [narrativeReview, setNarrativeReview] = useState({});
+  const [draftApproved, setDraftApproved] = useState(false);
+  const [reportTitle, setReportTitle] = useState("Daily Solar Performance Report");
+  const [reportSubtitle, setReportSubtitle] = useState("Daily generation, irradiance, PR, losses, and inverter performance");
+  const [preparedBy, setPreparedBy] = useState("Deepti · Analyst");
+  const [preparedFor, setPreparedFor] = useState("Alpha Solar Operations");
+  const [brandScope, setBrandScope] = useState("customer_report_type");
+  const [customerLogoLabel, setCustomerLogoLabel] = useState("AS");
+  const [companyLogoLabel, setCompanyLogoLabel] = useState("RG");
+  const [reportTheme, setReportTheme] = useState("corporate_blue");
+  const [summaryPosition, setSummaryPosition] = useState("top");
+  const [reportLayout, setReportLayout] = useState(null);
 
   const loadProfile = async () => {
     const data = await api.profile(customerId, reportType);
@@ -74,15 +233,61 @@ function App() {
   }, []);
 
   useEffect(() => {
+    if (!customerId) return;
+    api.customerContext(customerId).then((data) => {
+      setCustomerContext(data);
+      const configuration = data.report_configurations?.find((item) => item.report_type === reportType)
+        || data.report_configurations?.[0];
+      if (configuration) {
+        setSelectedConfigId(configuration.config_id);
+        setReportType(configuration.report_type);
+      }
+    }).catch((e) => setError(e.message));
+  }, [customerId]);
+
+  useEffect(() => {
+    if (!selectedConfigId) {
+      setReportLayout(null);
+      return;
+    }
+    api.reportLayout(selectedConfigId).then((data) => {
+      const saved = data.layout;
+      setReportLayout(saved);
+      if (saved) {
+        setReportTheme(saved.theme || "corporate_blue");
+        setSummaryPosition(saved.summary_position || "top");
+        const identity = saved.layout_json?.identity || {};
+        if (identity.reportTitle) setReportTitle(identity.reportTitle);
+        if (identity.reportSubtitle) setReportSubtitle(identity.reportSubtitle);
+        if (identity.preparedBy) setPreparedBy(identity.preparedBy);
+        if (identity.preparedFor) setPreparedFor(identity.preparedFor);
+        if (identity.customerLogoLabel) setCustomerLogoLabel(identity.customerLogoLabel);
+        if (identity.companyLogoLabel) setCompanyLogoLabel(identity.companyLogoLabel);
+      }
+    }).catch((e) => setError(e.message));
+  }, [selectedConfigId]);
+
+  useEffect(() => {
+    if (!customerId) return;
     Promise.all([loadProfile(), loadMappings(), loadFormulas()])
       .catch((e) => setError(e.message));
   }, [customerId, reportType]);
 
   const customer = customers.find((item) => item.customer_id === customerId);
+  const formulaFingerprint = JSON.stringify(
+    (formulaProfile?.formulas || [])
+      .filter((formula) => formula.approved_by_analyst)
+      .map((formula) => ({
+        output: formula.output_column,
+        formula: formula.formula,
+        scope: formula.scope,
+      }))
+      .sort((a, b) => String(a.output).localeCompare(String(b.output))),
+  );
+  const selectedConfiguration = customerContext?.report_configurations?.find(
+    (item) => item.config_id === selectedConfigId,
+  );
   const mappings = mappingProfile?.mappings || [];
-  const draft = calculation?.draft || {};
-  const kpis = calculation?.kpis || {};
-
   const run = async (action, success) => {
     setBusy(true); setError(""); setNotice("");
     try { await action(); if (success) setNotice(success); }
@@ -93,19 +298,202 @@ function App() {
   const uploadWorkbook = () => run(async () => {
     if (!file) throw new Error("Choose an Excel workbook first.");
     const result = await api.upload(file);
-    setFileId(result.file_id); setValidation(null); setCalculation(null);
+    setFileId(result.file_id); setSourceType("excel"); setSourceLabel(result.filename || file.name); setValidation(null); setCalculation(null);
+    setStep(2);
   }, "Workbook uploaded and ready for validation.");
 
+  const updateBigQueryConfig = (changes) => {
+    setBigQueryConfig((current) => ({ ...current, ...changes }));
+    setFileId(""); setValidation(null); setCalculation(null); setDraftApproved(false);
+  };
+
+  const updateBigQueryView = (key, value) => {
+    setBigQueryConfig((current) => ({
+      ...current,
+      table_map: { ...current.table_map, [key]: value },
+    }));
+    setFileId(""); setValidation(null); setCalculation(null); setDraftApproved(false);
+  };
+
+  const connectBigQuery = () => run(async () => {
+    const result = await api.connectBigQuery({
+      ...bigQueryConfig,
+      start_date: reportDate,
+      end_date: reportDate,
+    });
+    setFile(null);
+    setSourceType("bigquery");
+    setFileId(result.file_id);
+    setSourceLabel(result.mode === "demo" ? "BigQuery demo source" : `${bigQueryConfig.project_id}.${bigQueryConfig.dataset_id}`);
+    setValidation(null);
+    setCalculation(null);
+    setStep(2);
+  }, "BigQuery source connected and ready for validation.");
+
   const validateWorkbook = () => run(async () => {
-    if (!fileId) throw new Error("Upload the workbook before validation.");
+    if (!fileId) throw new Error("Connect a data source before validation.");
     setValidation(await api.validate({ customer_id: customerId, report_type: reportType, report_date: reportDate, file_id: fileId }));
   }, "Deterministic validation completed.");
 
   const calculateDraft = () => run(async () => {
-    if (!fileId) throw new Error("Upload the workbook before creating a draft.");
-    setCalculation(await api.calculate({ customer_id: customerId, report_type: reportType, report_date: reportDate, file_id: fileId }));
+    if (!fileId) throw new Error("Connect a data source before creating a draft.");
+    const result = await api.calculate({ customer_id: customerId, report_type: reportType, report_date: reportDate, file_id: fileId });
+    const savedComponents = reportLayout?.layout_json?.components || [];
+    const availableBreakdowns = result.draft?.available_breakdowns || ["site_total"];
+    const resolveBreakdown = (chartType, requested = "site_total") => {
+      if (availableBreakdowns.includes(requested)) return requested;
+      if (chartType === "heatmap") {
+        if (availableBreakdowns.includes("inverter")) return "inverter";
+        if (availableBreakdowns.includes("block")) return "block";
+      }
+      return "site_total";
+    };
+    let components = [...(result.draft?.chart_specs || []), ...(result.draft?.tables || [])];
+    if (savedComponents.length) {
+      const generated = [];
+      for (const configuration of savedComponents) {
+        if (configuration.included === false || !configuration.metrics?.length) continue;
+        try {
+          const response = await api.generateReportComponent({
+            customer_id: customerId,
+            report_type: reportType,
+            report_date: reportDate,
+            file_id: fileId,
+            component_id: configuration.componentId,
+            title: configuration.title,
+            metrics: configuration.metrics,
+            start_date: configuration.startDate || reportDate,
+            end_date: configuration.endDate || reportDate,
+            breakdown: resolveBreakdown(
+              configuration.chartType || "line",
+              configuration.breakdown || "site_total",
+            ),
+            chart_type: configuration.chartType || "line",
+            aggregation: "auto",
+            aggregations: configuration.aggregations || {},
+            time_grain: configuration.timeGrain || "daily",
+          });
+          generated.push(response.component);
+        } catch {
+          const fallback = components.find((item) => item.component_id === configuration.componentId);
+          if (fallback) generated.push(fallback);
+        }
+      }
+      if (generated.length) components = generated;
+    }
+    const chartSpecs = components.filter((item) => item.type !== "table");
+    const tables = components.filter((item) => item.type === "table");
+    const hydratedResult = {
+      ...result,
+      draft: { ...result.draft, chart_specs: chartSpecs, tables },
+    };
+    setCalculation(hydratedResult);
+    const savedById = Object.fromEntries(savedComponents.map((item) => [item.componentId, item]));
+    setChartReview(Object.fromEntries(components.map((item) => {
+      const metrics = item.series?.map((series) => series.metric).filter(Boolean).join(", ") || item.metric || "";
+      const saved = savedById[item.component_id] || {};
+      return [item.component_id, {
+        included: saved.included ?? true,
+        title: saved.title || item.title || humanize(item.component_id),
+        metrics: saved.metrics?.join(", ") || metrics,
+        startDate: saved.startDate || String(item.start_date || item.x?.[0] || reportDate).slice(0, 10),
+        endDate: saved.endDate || String(item.end_date || item.x?.[item.x.length - 1] || reportDate).slice(0, 10),
+        chartType: saved.chartType || item.type,
+        breakdown: resolveBreakdown(
+          saved.chartType || item.type,
+          saved.breakdown || item.breakdown || "site_total",
+        ),
+        aggregations: saved.aggregations || item.aggregation_overrides || {},
+        timeGrain: saved.timeGrain || item.time_grain || "daily",
+        textPosition: saved.textPosition || "beside",
+        explanationStatus: saved.explanationStatus || "suggested",
+        explanationSignature: saved.explanationSignature || "",
+        explanationEditedText: "",
+        formulaFingerprint,
+        width: saved.width || "full",
+        section: saved.section || "performance",
+      }];
+    })));
+    setFindingReview(Object.fromEntries((result.draft?.triggered_findings || []).map((item, index) => [item.finding_id || item.rule_id || index, true])));
+    setNarrativeReview(Object.fromEntries((result.draft?.narrative_blocks || []).map((item, index) => [item.block_id || index, item.text || item.content || ""])));
+    setDraftApproved(false);
     setStep(5);
   }, "Draft assembled from approved calculations and rules.");
+
+  const generateReportComponent = async (configuration) => {
+    if (!fileId) throw new Error("Connect a data source before adding report components.");
+    const response = await api.generateReportComponent({
+      customer_id: customerId,
+      report_type: reportType,
+      report_date: reportDate,
+      file_id: fileId,
+      component_id: configuration.componentId,
+      title: configuration.title,
+      metrics: configuration.metrics,
+      start_date: configuration.startDate,
+      end_date: configuration.endDate,
+      breakdown: configuration.breakdown,
+      chart_type: configuration.chartType,
+      aggregation: "auto",
+      aggregations: configuration.aggregations || {},
+      time_grain: configuration.timeGrain || "daily",
+    });
+    const component = response.component;
+    setCalculation((current) => {
+      const draft = current?.draft || {};
+      const all = [...(draft.chart_specs || []), ...(draft.tables || [])];
+      const next = all.some((item) => item.component_id === component.component_id)
+        ? all.map((item) => item.component_id === component.component_id ? component : item)
+        : [...all, component];
+      return {
+        ...current,
+        draft: {
+          ...draft,
+          chart_specs: next.filter((item) => item.type !== "table"),
+          tables: next.filter((item) => item.type === "table"),
+        },
+      };
+    });
+    return component;
+  };
+
+  const saveReportLayout = async (layout, createRevision = false) => {
+    if (!selectedConfigId) throw new Error("Choose a report configuration first.");
+    const response = await api.saveReportLayout(selectedConfigId, {
+      config_id: selectedConfigId,
+      customer_id: customerId,
+      report_type: reportType,
+      theme: reportTheme,
+      summary_position: summaryPosition,
+      layout,
+      create_revision: createRevision,
+      created_by: preparedBy || "Analyst",
+    });
+    setReportLayout(response.layout);
+    return response.layout;
+  };
+
+  const approveCurrentLayout = async (layoutId) => {
+    const response = await api.approveReportLayout(layoutId, {
+      layout_id: layoutId,
+      approved_by: preparedBy || "Analyst",
+    });
+    setReportLayout(response.layout);
+    return response.layout;
+  };
+
+  const approveReportSnapshot = async (layoutId, report) => {
+    const response = await api.approveReportSnapshot({
+      config_id: selectedConfigId,
+      customer_id: customerId,
+      report_type: reportType,
+      report_date: reportDate,
+      layout_id: layoutId,
+      approved_by: preparedBy || "Analyst",
+      report,
+    });
+    return response.snapshot;
+  };
 
   const approveFormula = (metric) => run(async () => {
     await api.approveFormula({
@@ -213,13 +601,93 @@ function App() {
     setQuestion(""); await loadProfile();
   }, "Standing question approved and saved.");
 
+  const approveSuggestedQuestion = (item) => run(async () => {
+    await api.approveQuestion({
+      question_text: item.question_text,
+      customer_id: customerId,
+      report_type: reportType,
+      scope: item.scope || "customer_report_type",
+      required_metrics: item.required_metrics || [],
+      preferred_components: item.preferred_components || [],
+    });
+    await loadProfile();
+  }, "Standing question approved and saved.");
+
+  const selectCustomer = (item) => {
+    setCustomerId(item.customer_id);
+    setCustomerMode("existing");
+    setPreparedFor(item.parent_company || item.customer_name);
+    const initials = item.customer_name.split(/\s+/).map((part) => part[0]).join("").slice(0, 3).toUpperCase();
+    setCustomerLogoLabel(initials || "CU");
+    setFile(null); setFileId(""); setValidation(null); setCalculation(null);
+  };
+
+  const chooseConfiguration = (configuration) => {
+    setSelectedConfigId(configuration.config_id);
+    setReportType(configuration.report_type);
+    setFile(null); setFileId(""); setValidation(null); setCalculation(null);
+  };
+
+  const updateNewCustomer = (changes) => {
+    setNewCustomer((current) => ({ ...current, ...changes }));
+  };
+
+  const createCustomer = () => run(async () => {
+    if (!newCustomer.customer_name.trim() || !newCustomer.site_name.trim()) {
+      throw new Error("Customer name and site name are required.");
+    }
+    const result = await api.createCustomer({
+      ...newCustomer,
+      customer_name: newCustomer.customer_name.trim(),
+      parent_company: newCustomer.parent_company.trim() || null,
+      customer_reference: newCustomer.customer_reference.trim() || null,
+      site_name: newCustomer.site_name.trim(),
+      location: newCustomer.location.trim() || null,
+      dc_capacity_kwp: newCustomer.dc_capacity_kwp ? Number(newCustomer.dc_capacity_kwp) : null,
+      ac_capacity_kw: newCustomer.ac_capacity_kw ? Number(newCustomer.ac_capacity_kw) : null,
+    });
+    const refreshed = await api.customers();
+    setCustomers(refreshed.customers || []);
+    setCustomerId(result.customer_id);
+    setReportType(result.report_type);
+    setSelectedConfigId(result.config_id);
+    setPreparedFor(newCustomer.parent_company.trim() || newCustomer.customer_name.trim());
+    const initials = newCustomer.customer_name.split(/\s+/).map((part) => part[0]).join("").slice(0, 3).toUpperCase();
+    setCustomerLogoLabel(initials || "CU");
+    setCustomerMode("existing");
+    setStep(1);
+  }, "Customer, first site, and Daily Generation Report configuration created.");
+
   const pageTitle = STEPS[step][0];
   const ready = Boolean(fileId && validation?.valid);
+  const hasExistingContext = Boolean(customerId && selectedConfigId);
+  const hasNewCustomerBasics = Boolean(newCustomer.customer_name.trim() && newCustomer.site_name.trim());
+  const canContinue = step === 0
+    ? customerMode === "existing" ? hasExistingContext : hasNewCustomerBasics
+    : step === 1 ? Boolean(fileId)
+      : step === 2 ? Boolean(validation)
+        : step !== STEPS.length - 1;
+  const continueHelp = step === 1 && !fileId
+    ? "Connect a data source before validation."
+    : step === 2 && !validation
+      ? "Run validation before continuing."
+      : "";
   const filteredMappings = mappings.filter((item) => {
     const query = mappingSearch.trim().toLowerCase();
     return !query || item.system_column.toLowerCase().includes(query)
       || item.customer_column.toLowerCase().includes(query);
   });
+  const filteredCustomers = customers.filter((item) => {
+    const query = customerSearch.trim().toLowerCase();
+    return !query || [
+      item.customer_name,
+      item.parent_company,
+      item.customer_reference,
+    ].some((value) => String(value || "").toLowerCase().includes(query));
+  });
+  const contextLabel = customerMode === "new" && step === 0
+    ? "New customer · First report setup"
+    : `${customer?.customer_name || "Select customer"} · ${selectedConfiguration?.configuration_name || humanize(reportType)}`;
 
   return (
     <div className="product-shell">
@@ -242,31 +710,142 @@ function App() {
       </aside>
 
       <main>
-        <header className="topbar"><div><p className="eyebrow">Alpha Solar · Daily generation</p><h1>{pageTitle}</h1></div><Status tone={profile?.pending_approval_count ? "warn" : "success"}>{profile?.pending_approval_count || 0} pending approvals</Status></header>
+        <header className="topbar"><div><p className="eyebrow">{contextLabel}</p><h1>{pageTitle}</h1></div>{step > 0 && <Status tone={profile?.pending_approval_count ? "warn" : "success"}>{profile?.pending_approval_count || 0} pending approvals</Status>}</header>
         {error && <div className="alert error">{error}</div>}
         {notice && <div className="alert success">{notice}</div>}
 
         {step === 0 && (
-          <section className="customer-profile">
-            <article className="card selector-card"><label>Select customer<select value={customerId} onChange={(e) => setCustomerId(e.target.value)}>{customers.map((item) => <option key={item.customer_id} value={item.customer_id}>{item.customer_name}</option>)}</select></label><Button secondary>＋ Add customer</Button><label>Report type<select value={reportType} onChange={(e) => setReportType(e.target.value)}><option value="daily_generation">Daily Generation Report</option></select></label></article>
-            <div className="panel-grid three summary-cards"><article className="card"><span>Last 180 reports</span><strong>{customer?.report_count || 0}</strong><small>Generated successfully</small></article><article className="card"><span>Status</span><strong className="setup-status">{humanize(customer?.status || "setup in progress")}</strong><small>Continue setup to generate reports</small></article><article className="card"><span>Customer memory</span><strong className="memory-saved">✓ Customer memory saved</strong><small>Preferences will be remembered</small></article></div>
-            <div className="panel-grid two profile-memory"><article className="card"><h3>Preferred KPIs</h3><div className="tag-list"><span>PR</span><span>Specific Yield</span><span>Curtailment Loss</span></div></article><article className="card"><h3>Standing Questions</h3><ul>{(profile?.customer_questions || []).slice(0, 4).map((item) => <li key={item.question_id || item.question_text}>{item.question_text}</li>)}</ul></article></div>
-            <div className="panel-grid two profile-memory"><article className="card"><h3>Approved Formula Store</h3>{(profile?.derivable || []).filter((item) => item.approved_by_analyst).slice(0, 3).map((item) => <div className="memory-row" key={item.metric_name}><span>{item.metric_name}</span><Status tone="success">Approved</Status></div>)}{!(profile?.derivable || []).some((item) => item.approved_by_analyst) && <p className="muted-line">No formulas approved yet</p>}</article><article className="card"><h3>Approved Rules</h3>{(profile?.insight_rules || []).filter((item) => item.approved_by_analyst).slice(0, 3).map((item) => <div className="memory-row" key={item.rule_id || item.rule_name}><span>{item.rule_name}</span><Status tone="success">Approved</Status></div>)}{!(profile?.insight_rules || []).some((item) => item.approved_by_analyst) && <p className="muted-line">No insight rules approved yet</p>}</article></div>
-            <div className="info-banner">ⓘ Chart and layout preferences can be configured after draft review.</div>
+          <section className="customer-setup">
+            <div className="setup-intro"><h2>Who is this report for?</h2><p>Select an existing customer or create a new customer profile.</p></div>
+            <div className="customer-mode-grid">
+              <button className={`customer-mode-card ${customerMode === "existing" ? "active" : ""}`} onClick={() => setCustomerMode("existing")}><span className="choice-radio" /><span><strong>Existing customer</strong><small>Load saved sites, report configurations, and reporting memory.</small></span></button>
+              <button className={`customer-mode-card ${customerMode === "new" ? "active" : ""}`} onClick={() => setCustomerMode("new")}><span className="choice-radio" /><span><strong>New customer</strong><small>Create the customer and configure their first report.</small></span></button>
+            </div>
+
+            {customerMode === "existing" ? (
+              <div className="existing-customer-flow">
+                <label className="customer-search">Find customer<div className="search-field"><input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Search by customer, company, or plant…" /><span>⌕</span></div></label>
+                <div className="customer-results">
+                  {filteredCustomers.map((item) => <button key={item.customer_id} className={`customer-result ${customerId === item.customer_id ? "selected" : ""}`} onClick={() => selectCustomer(item)}><span className="customer-building">▥</span><span><strong>{item.customer_name}</strong><small>{item.parent_company ? `Parent company: ${item.parent_company}` : "Independent customer"}</small><em>{item.site_count || 0} site{item.site_count === 1 ? "" : "s"} · {item.configuration_count || 0} active report configuration{item.configuration_count === 1 ? "" : "s"}</em></span><span className="profile-link">View customer profile ↗</span></button>)}
+                  {!filteredCustomers.length && <Empty>No customer matches this search.</Empty>}
+                </div>
+
+                {customer && <div className="configuration-picker"><h3>Choose site and report configuration</h3>{(customerContext?.report_configurations || []).map((configuration) => {
+                  const selected = selectedConfigId === configuration.config_id;
+                  const pending = profile?.pending_approval_count || 0;
+                  return <button key={configuration.config_id} className={`configuration-option ${selected ? "selected" : ""}`} onClick={() => chooseConfiguration(configuration)}><span className="choice-radio" /><span><small>Site</small><strong>{configuration.site_name}</strong></span><span><small>Report</small><strong>{configuration.configuration_name}</strong></span><span><small>Frequency</small><strong>{humanize(configuration.reporting_period)}</strong></span><Status tone={pending ? "warn" : "success"}>{pending ? "Setup required" : "Ready"}</Status><span className="memory-count">{mappingProfile?.confirmed_count || 0} mappings · {formulaProfile?.approved_count || 0} formulas · {(profile?.customer_questions || []).filter((item) => item.approved_by_analyst).length} questions · {(profile?.insight_rules || []).filter((item) => item.approved_by_analyst).length} rules</span></button>;
+                })}{!customerContext?.report_configurations?.length && <div className="empty-configuration">No report configuration exists for this customer yet.</div>}
+                  <button className="create-configuration" onClick={() => setNotice("Additional report configurations will follow the Daily Generation MVP.")}>＋ <span>Create another report configuration</span></button>
+                  <div className="context-actions"><button onClick={() => setNotice("Additional site setup will follow the Daily Generation MVP.")}>＋ Add new site</button><button onClick={() => setNotice("Customer profile editing is the next profile-management increment.")}>✎ Edit customer profile</button></div>
+                </div>}
+              </div>
+            ) : (
+              <article className="card new-customer-form">
+                <section><div className="form-section-title"><span>1</span><h3>Customer details</h3><button type="button" onClick={() => setNotice("Logo upload will be available from the saved customer profile.")}>↥ Upload customer logo (optional)</button></div><div className="setup-form-grid three"><label>Customer name*<input value={newCustomer.customer_name} onChange={(event) => updateNewCustomer({ customer_name: event.target.value })} placeholder="e.g. Alpha Solar Operations" /></label><label>Parent company<input value={newCustomer.parent_company} onChange={(event) => updateNewCustomer({ parent_company: event.target.value })} placeholder="Optional" /></label><label>Customer reference<input value={newCustomer.customer_reference} onChange={(event) => updateNewCustomer({ customer_reference: event.target.value })} placeholder="Optional internal ID" /></label></div></section>
+                <section><div className="form-section-title"><span>2</span><h3>First plant or site</h3></div><div className="setup-form-grid three"><label>Site name*<input value={newCustomer.site_name} onChange={(event) => updateNewCustomer({ site_name: event.target.value })} placeholder="e.g. Alpha Solar Power Plant" /></label><label>Location<input value={newCustomer.location} onChange={(event) => updateNewCustomer({ location: event.target.value })} placeholder="City, region, country" /></label><label>Timezone*<select value={newCustomer.timezone} onChange={(event) => updateNewCustomer({ timezone: event.target.value })}><option value="Asia/Kolkata">Asia/Kolkata (IST)</option><option value="UTC">UTC</option></select></label><label>DC capacity (kWp)<input type="number" min="0" value={newCustomer.dc_capacity_kwp} onChange={(event) => updateNewCustomer({ dc_capacity_kwp: event.target.value })} placeholder="Required for capacity-based KPIs" /></label><label>AC capacity (kW)<input type="number" min="0" value={newCustomer.ac_capacity_kw} onChange={(event) => updateNewCustomer({ ac_capacity_kw: event.target.value })} placeholder="Optional for initial setup" /></label></div><p className="section-helper">Additional equipment and source details can be completed before calculation.</p></section>
+                <section><div className="form-section-title"><span>3</span><h3>First report configuration</h3></div><div className="setup-form-grid three"><label>Report type*<select value={newCustomer.report_type} disabled><option value="daily_generation">Solar Performance Report</option></select></label><label>Reporting period*<select value={newCustomer.reporting_period} disabled><option value="daily">Daily</option></select></label><label>Configuration name<input value={newCustomer.configuration_name} onChange={(event) => updateNewCustomer({ configuration_name: event.target.value })} /></label></div><div className="setup-callout">ⓘ Mappings, formulas, questions, rules, and report components will be configured and approved in the next steps.</div></section>
+              </article>
+            )}
           </section>
         )}
 
         {step === 1 && (
           <section className="panel-grid two">
-            <article className="card upload-card"><div className="upload-icon">↥</div><h2>Upload source workbook</h2><p>Excel remains the source input. ReportGen stores approved configuration separately as product memory.</p><label className="file-picker"><input aria-label="Source workbook" type="file" accept=".xlsx,.xls" onChange={(e) => setFile(e.target.files?.[0] || null)} /><span>{file ? file.name : "Choose Excel workbook"}</span></label><Button disabled={busy || !file} onClick={uploadWorkbook}>{busy ? "Uploading…" : "Upload workbook"}</Button>{fileId && <Status tone="success">Uploaded · {fileId.slice(0, 8)}</Status>}</article>
-            <article className="card form-card"><h3>Report context</h3><label>Report date<input type="date" value={reportDate} onChange={(e) => setReportDate(e.target.value)} /></label><label>Calculation policy<input value="Approved Python / pandas formulas" disabled /></label><div className="callout">KPI values are never generated by AI. The calculation engine uses approved deterministic formulas.</div><Button secondary disabled={!fileId} onClick={() => setStep(2)}>Review validation</Button></article>
+            <article className="card upload-card source-card">
+              <div className="upload-icon">{sourceType === "bigquery" ? "BQ" : "↥"}</div>
+              <h2>Connect source data</h2>
+              <p>ReportGen accepts clean report-ready data, then stores approved configuration separately as product memory.</p>
+
+              <div className="source-choice-grid" role="group" aria-label="Data source">
+                <button
+                  className={`source-choice-card ${sourceType === "excel" ? "active" : ""}`}
+                  onClick={() => { setSourceType("excel"); setFileId(""); setSourceLabel(""); setValidation(null); setCalculation(null); }}
+                  type="button"
+                >
+                  <strong>Excel workbook</strong>
+                  <small>Upload the daily solar workbook for this report run.</small>
+                </button>
+                <button
+                  className={`source-choice-card ${sourceType === "bigquery" ? "active" : ""}`}
+                  onClick={() => { setSourceType("bigquery"); setFileId(""); setSourceLabel(""); setValidation(null); setCalculation(null); }}
+                  type="button"
+                >
+                  <strong>BigQuery views</strong>
+                  <small>Read clean, pre-joined views prepared in BigQuery.</small>
+                </button>
+              </div>
+
+              {sourceType === "excel" ? (
+                <>
+                  <label className="file-picker">
+                    <input
+                      aria-label="Source workbook"
+                      type="file"
+                      accept=".xlsx,.xls"
+                      onChange={(e) => {
+                        const selected = e.target.files?.[0] || null;
+                        setFile(selected);
+                        setFileId("");
+                        setSourceLabel("");
+                        setValidation(null);
+                        setCalculation(null);
+                      }}
+                    />
+                    <span>{file ? file.name : "Choose Excel workbook"}</span>
+                  </label>
+                  <Button disabled={busy || !file} onClick={uploadWorkbook}>{busy ? "Uploading…" : fileId ? "Upload again" : "Upload workbook"}</Button>
+                  {file && !fileId && <div className="upload-hint">File selected. Click <b>Upload workbook</b> to send it to ReportGen before validation.</div>}
+                </>
+              ) : (
+                <div className="bigquery-form">
+                  <label className="checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={bigQueryConfig.use_demo_data}
+                      onChange={(event) => updateBigQueryConfig({ use_demo_data: event.target.checked })}
+                    />
+                    Use demo BigQuery source for local prototype
+                  </label>
+                  <div className="setup-form-grid three">
+                    <label>Project ID
+                      <input value={bigQueryConfig.project_id} onChange={(event) => updateBigQueryConfig({ project_id: event.target.value })} placeholder="gcp-project-id" />
+                    </label>
+                    <label>Dataset ID
+                      <input value={bigQueryConfig.dataset_id} onChange={(event) => updateBigQueryConfig({ dataset_id: event.target.value })} placeholder="reporting_dataset" />
+                    </label>
+                    <label>Plant/site ID
+                      <input value={bigQueryConfig.plant_id || ""} onChange={(event) => updateBigQueryConfig({ plant_id: event.target.value })} placeholder="Optional plant_id filter" />
+                    </label>
+                  </div>
+                  <div className="bigquery-view-grid">
+                    {Object.entries(bigQueryConfig.table_map).map(([key, value]) => (
+                      <label key={key}>{humanize(key)} view
+                        <input value={value} onChange={(event) => updateBigQueryView(key, event.target.value)} placeholder={`reportgen_${key}`} />
+                      </label>
+                    ))}
+                  </div>
+                  <div className="callout">Joins and source-specific transforms should happen in BigQuery. ReportGen reads clean views/tables and then validates, maps, calculates, and generates evidence exactly like Excel.</div>
+                  <Button disabled={busy || !bigQueryConfig.project_id || !bigQueryConfig.dataset_id} onClick={connectBigQuery}>{busy ? "Connecting…" : "Connect BigQuery source"}</Button>
+                </div>
+              )}
+
+              {fileId && <div className="source-status"><Status tone="success">Connected · {sourceType === "bigquery" ? "BigQuery" : "Excel"} · {sourceLabel || fileId.slice(0, 8)}</Status></div>}
+            </article>
+            <article className="card form-card">
+              <h3>Report context</h3>
+              <label>Report date<input type="date" value={reportDate} onChange={(e) => { setReportDate(e.target.value); if (sourceType === "bigquery") { setFileId(""); setValidation(null); setCalculation(null); } }} /></label>
+              <label>Calculation policy<input value="Approved Python / pandas formulas" disabled /></label>
+              <label>Connected source<input value={fileId ? `${sourceType === "bigquery" ? "BigQuery" : "Excel"} · ${sourceLabel || fileId.slice(0, 8)}` : "No source connected yet"} disabled /></label>
+              <div className="callout">KPI values are never generated by AI. The calculation engine uses approved deterministic formulas.</div>
+              <Button secondary disabled={!fileId} onClick={() => setStep(2)}>{fileId ? "Review validation" : "Connect source first"}</Button>
+            </article>
           </section>
         )}
 
         {step === 2 && (
           <section>
-            <article className="card section-head"><div><h2>Workbook validation</h2><p>Check structure, data types, completeness, duplicates, and mapping coverage before calculation.</p></div><Button disabled={busy || !fileId} onClick={validateWorkbook}>{busy ? "Checking…" : "Run validation"}</Button></article>
-            {!validation ? <Empty>Upload a workbook and run deterministic validation.</Empty> : <div className="panel-grid three summary-cards"><article className="card"><span>Result</span><strong className={validation.valid ? "good" : "bad"}>{validation.valid ? "Passed" : "Needs attention"}</strong></article><article className="card"><span>Errors</span><strong>{validation.errors.length}</strong></article><article className="card"><span>Warnings</span><strong>{validation.warnings.length}</strong></article></div>}
+            <article className="card section-head"><div><h2>Data validation</h2><p>Check structure, data types, completeness, duplicates, and mapping coverage before calculation.</p>{!fileId && <p className="validation-helper">No data source connected yet. Go back to Upload, choose Excel or BigQuery, then connect the source.</p>}</div><Button disabled={busy || !fileId} onClick={validateWorkbook}>{busy ? "Checking…" : fileId ? "Run validation" : "Connect source first"}</Button></article>
+            {!validation ? <Empty>{fileId ? "Data source connected. Run deterministic validation." : "Connect a data source before running validation."}</Empty> : <div className="panel-grid three summary-cards"><article className="card"><span>Result</span><strong className={validation.valid ? "good" : "bad"}>{validation.valid ? "Passed" : "Needs attention"}</strong></article><article className="card"><span>Errors</span><strong>{validation.errors.length}</strong></article><article className="card"><span>Warnings</span><strong>{validation.warnings.length}</strong></article></div>}
             {validation && <article className="card"><h3>Validation detail</h3>{[...validation.errors, ...validation.warnings].length === 0 ? <p className="checkline">✓ No blocking data-quality issues were found.</p> : [...validation.errors, ...validation.warnings].map((item, index) => <p className="issue" key={index}>{typeof item === "string" ? item : JSON.stringify(item)}</p>)}<div className="actions"><Button secondary onClick={() => setStep(3)}>Review mappings & formulas</Button></div></article>}
           </section>
         )}
@@ -283,16 +862,47 @@ function App() {
         )}
 
         {step === 4 && (
-          <section className="panel-grid two"><article className="card"><h2>Standing customer questions</h2><p>Questions recur with every report and determine which evidence components belong in the draft.</p><div className="inline-form"><input aria-label="Standing customer question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="What caused the PR change?" /><Button onClick={addQuestion}>Add</Button></div>{profile?.customer_questions?.map((item) => <div className="approval-row" key={item.question_id || item.question_text}><div><strong>{item.question_text}</strong><small>{item.answer_purpose || "Recurring report question"}</small></div><Status tone={item.approved_by_analyst ? "success" : "warn"}>{item.approved_by_analyst ? "Approved" : "Suggested"}</Status></div>)}</article><article className="card"><h2>Insight rules</h2><p>Only approved deterministic conditions can trigger findings.</p>{profile?.insight_rules?.map((rule) => <div className="approval-row" key={rule.rule_id || rule.rule_name}><div><strong>{rule.rule_name}</strong><code>{rule.condition}</code><small>Severity · {rule.severity}</small></div>{rule.approved_by_analyst ? <Status tone="success">Approved</Status> : <Button secondary onClick={() => approveRule(rule)}>Approve</Button>}</div>)}<div className="actions"><Button disabled={!ready || busy} onClick={calculateDraft}>{busy ? "Calculating…" : "Generate deterministic draft"}</Button></div></article></section>
-        )}
-
-        {step === 5 && (
-          <section>
-            {!calculation ? <article className="card empty"><h2>No draft yet</h2><p>Complete upload and validation, then generate the report draft.</p><Button onClick={() => setStep(4)}>Return to rules</Button></article> : <><article className="card draft-head"><div><p className="eyebrow">{reportDate} · {humanize(reportType)}</p><h2>{customer?.customer_name || "Alpha Solar"} performance draft</h2><p>Evidence below comes from Python calculations and analyst-approved rules.</p></div><Status tone={draft.status === "draft_ready" ? "success" : "warn"}>{humanize(draft.status || "draft")}</Status></article><div className="kpi-grid"><article><span>Performance ratio</span><strong>{number(kpis.pr_percent, "%")}</strong></article><article><span>Generation</span><strong>{number(kpis.generation_kwh, " kWh")}</strong></article><article><span>Specific yield</span><strong>{number(kpis.specific_yield_kwh_per_kwp)}</strong></article><article><span>Data availability</span><strong>{number(kpis.data_availability_percent, "%")}</strong></article></div><div className="panel-grid two"><article className="card"><h3>Triggered findings</h3>{calculation.findings.length ? calculation.findings.map((finding, index) => <div className="finding" key={finding.finding_id || index}><Status tone={finding.severity === "high" ? "danger" : "warn"}>{finding.severity}</Status><div><strong>{finding.title || humanize(finding.rule_name)}</strong><p>{finding.finding || finding.message || finding.description}</p><small>{finding.suggestion}</small></div></div>) : <Empty>No approved insight rules triggered.</Empty>}</article><article className="card"><h3>Editable narrative</h3>{draft.narrative_blocks?.map((block, index) => <div className="narrative" key={block.block_id || index}><span>{humanize(block.block_type || block.type)}</span><textarea defaultValue={block.text || block.content} /></div>)}{!draft.narrative_blocks?.length && <Empty>The deterministic draft contains no narrative blocks.</Empty>}</article></div><article className="card"><h3>Evidence components</h3><div className="component-grid">{(calculation.chart_specs || []).map((chart, index) => <div key={chart.component_id || index}><span>{humanize(chart.chart_type || chart.type || "chart")}</span><strong>{chart.title || humanize(chart.component_id)}</strong></div>)}</div></article></>}
+          <section className="questions-workspace">
+            <div className="panel-grid two"><article className="card"><h2>Standing customer questions</h2><p>Questions recur with every report and determine which evidence components belong in the draft.</p><div className="inline-form"><input aria-label="Standing customer question" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="What caused the PR change?" /><Button onClick={addQuestion}>Add</Button></div>{profile?.customer_questions?.map((item) => <div className="approval-row" key={item.question_id || item.question_text}><div><strong>{item.question_text}</strong><small>{item.answer_purpose || "Recurring report question"}</small></div>{item.approved_by_analyst ? <Status tone="success">Approved</Status> : <Button secondary disabled={busy} onClick={() => approveSuggestedQuestion(item)}>Approve</Button>}</div>)}</article><article className="card"><h2>Insight rules</h2><p>Only approved deterministic conditions can trigger findings.</p>{profile?.insight_rules?.map((rule) => <div className="approval-row" key={rule.rule_id || rule.rule_name}><div><strong>{rule.rule_name}</strong><code>{rule.condition}</code><small>Severity · {rule.severity}</small></div>{rule.approved_by_analyst ? <Status tone="success">Approved</Status> : <Button secondary onClick={() => approveRule(rule)}>Approve</Button>}</div>)}</article></div>
+            <article className="card theme-selector"><div className="card-title-row"><div><h2>Choose report presentation</h2><p>The theme controls presentation only. Calculations, findings, and evidence remain unchanged.</p></div>{reportLayout && <Status tone={reportLayout.status === "approved" ? "success" : "warn"}>Layout v{reportLayout.version} · {humanize(reportLayout.status)}</Status>}</div><div className="theme-options">{REPORT_THEMES.map(([value, label, description]) => <button key={value} className={`theme-option ${reportTheme === value ? "active" : ""}`} onClick={() => { setReportTheme(value); setDraftApproved(false); }}><span className={`theme-swatch ${value}`}><i /><i /><i /></span><strong>{label}</strong><small>{description}</small></button>)}</div><label className="summary-position">Executive summary position<select value={summaryPosition} onChange={(event) => setSummaryPosition(event.target.value)}><option value="top">Top of report</option><option value="after_kpis">After KPI scorecards</option></select></label><div className="actions"><Button disabled={!ready || busy} onClick={calculateDraft}>{busy ? "Calculating…" : "Generate deterministic draft"}</Button></div></article>
           </section>
         )}
 
-        <footer><div className="progress-saved">✓ Progress saved. You can return to any previous step.</div><div className="footer-actions"><Button secondary disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))}>Back</Button><span>Step {step + 1} of {STEPS.length}</span><Button disabled={step === STEPS.length - 1} onClick={() => setStep((value) => Math.min(STEPS.length - 1, value + 1))}>{step === 0 ? "Save & Continue" : "Continue"} →</Button></div></footer>
+        {step === 5 && (
+          <section className="draft-review-workspace">
+            <DraftReview
+              calculation={calculation}
+              customer={customer}
+              reportDate={reportDate}
+              reportType={reportType}
+              configId={selectedConfigId}
+              reportIdentity={{ reportTitle, reportSubtitle, preparedBy, preparedFor, customerLogoLabel, companyLogoLabel, brandScope }}
+              reportTheme={reportTheme}
+              setReportTheme={setReportTheme}
+              summaryPosition={summaryPosition}
+              setSummaryPosition={setSummaryPosition}
+              reportLayout={reportLayout}
+              formulaFingerprint={formulaFingerprint}
+              chartReview={chartReview}
+              setChartReview={setChartReview}
+              findingReview={findingReview}
+              setFindingReview={setFindingReview}
+              narrativeReview={narrativeReview}
+              setNarrativeReview={setNarrativeReview}
+              draftApproved={draftApproved}
+              setDraftApproved={setDraftApproved}
+              setNotice={setNotice}
+              generateComponent={generateReportComponent}
+              saveLayout={saveReportLayout}
+              approveLayout={approveCurrentLayout}
+              approveSnapshot={approveReportSnapshot}
+              goBack={() => setStep(4)}
+              ChartRenderer={ChartRenderer}
+            />
+          </section>
+        )}
+
+        <footer><div className="progress-saved">{step === 0 ? "Customer context controls all downstream report decisions." : "✓ Progress saved. You can return to any previous step."}</div><div className="footer-actions"><Button secondary disabled={step === 0} onClick={() => setStep((value) => Math.max(0, value - 1))}>Back</Button><span>{continueHelp || `Step ${step + 1} of ${STEPS.length}`}</span><Button disabled={!canContinue || busy} onClick={() => { if (step === 0 && customerMode === "new") createCustomer(); else setStep((value) => Math.min(STEPS.length - 1, value + 1)); }}>{step === 0 ? customerMode === "new" ? busy ? "Creating customer…" : "Create customer & continue" : "Continue to Upload & Period" : "Continue"} →</Button></div></footer>
       </main>
       </div>
     </div>

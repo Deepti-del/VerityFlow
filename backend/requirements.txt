@@ -10,3 +10,5 @@ kaleido
 pydantic
 pytest
 python-multipart
+google-cloud-bigquery
+db-dtypes

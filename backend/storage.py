@@ -1,6 +1,7 @@
 import os
 import re
 import uuid
+import shutil
 from pathlib import Path
 
 
@@ -47,6 +48,55 @@ def save_upload(file_bytes: bytes, filename: str) -> str:
     with open(path, "wb") as handle:
         handle.write(file_bytes)
 
+    return file_id
+
+
+def register_existing_workbook(path: str, filename: str | None = None) -> str:
+    """
+    Registers an existing report-ready workbook as a ReportGen source file.
+
+    BigQuery and future connectors can materialize clean, report-ready data into
+    the same workbook package that the Excel upload path already uses. This
+    keeps validation/calculation/chart generation unchanged downstream.
+    """
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"Workbook not found: {path}")
+
+    safe_name = _safe_filename(filename or Path(path).name)
+    extension = Path(safe_name).suffix.lower()
+    if extension not in {".xlsx", ".xls"}:
+        safe_name = f"{Path(safe_name).stem or 'source'}.xlsx"
+
+    _ensure_upload_dir()
+    file_id = str(uuid.uuid4())
+    target = os.path.join(UPLOAD_DIR, f"{file_id}__{safe_name}")
+    shutil.copyfile(path, target)
+    return file_id
+
+
+def save_workbook_from_frames(frames: dict[str, "pd.DataFrame"], filename: str) -> str:
+    """
+    Saves report-ready DataFrames as an Excel workbook and returns a file_id.
+
+    The pandas import is intentionally local so normal Excel upload usage does
+    not require this helper to load unless a connector uses it.
+    """
+    import pandas as pd
+
+    if not frames:
+        raise ValueError("No report-ready BigQuery frames were returned.")
+
+    safe_name = _safe_filename(filename)
+    if Path(safe_name).suffix.lower() != ".xlsx":
+        safe_name = f"{Path(safe_name).stem or 'bigquery_source'}.xlsx"
+
+    _ensure_upload_dir()
+    file_id = str(uuid.uuid4())
+    path = os.path.join(UPLOAD_DIR, f"{file_id}__{safe_name}")
+    with pd.ExcelWriter(path) as writer:
+        for sheet_name, frame in frames.items():
+            clean_sheet = re.sub(r"[^A-Za-z0-9_ -]+", "_", sheet_name)[:31] or "Sheet1"
+            frame.to_excel(writer, sheet_name=clean_sheet, index=False)
     return file_id
 
 

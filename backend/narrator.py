@@ -36,6 +36,17 @@ def _metric_phrase(metric: str, value: Any) -> str:
     return f"{label} {formatted}"
 
 
+def _percentage_change(current: Any, previous: Any) -> float | None:
+    try:
+        current_value = float(current)
+        previous_value = float(previous)
+    except (TypeError, ValueError):
+        return None
+    if previous_value == 0:
+        return None
+    return round((current_value - previous_value) / abs(previous_value) * 100, 1)
+
+
 def _block_id(prefix: str, value: str, index: int) -> str:
     safe = "".join(char.lower() if char.isalnum() else "_" for char in value)
     safe = "_".join(part for part in safe.split("_") if part)
@@ -57,18 +68,34 @@ def _executive_summary_block(report_draft: dict) -> dict:
         if metric in latest
     ]
     metric_text = ", ".join(metrics) if metrics else "key KPIs are available"
-    finding_count = len(report_draft.get("triggered_findings") or [])
+    text = f"For {report_date}, {metric_text}."
+    comparisons = []
+    for metric, previous_metric, label in (
+        ("generation_kwh", "prev_day_generation_kwh", "Generation"),
+        ("pr_percent", "prev_day_pr_percent", "PR"),
+    ):
+        if metric not in latest or previous_metric not in latest:
+            continue
+        change = _percentage_change(latest[metric], latest[previous_metric])
+        if change is not None:
+            comparisons.append(f"{label} changed by {change:+.1f}% versus the previous day")
+    if comparisons:
+        text += " " + "; ".join(comparisons) + "."
 
-    if finding_count:
-        text = (
-            f"For {report_date}, {metric_text}. "
-            f"The draft includes {finding_count} finding(s) that need analyst review."
-        )
+    report_findings = [
+        finding for finding in (report_draft.get("triggered_findings") or [])
+        if str((finding.get("evidence") or {}).get("date") or "")[:10]
+        == str(report_date)[:10]
+    ]
+    rule_names = list(dict.fromkeys(
+        finding.get("rule_name")
+        for finding in report_findings
+        if finding.get("rule_name")
+    ))
+    if rule_names:
+        text += " Approved rules flagged " + ", ".join(rule_names[:3]) + "."
     else:
-        text = (
-            f"For {report_date}, {metric_text}. "
-            "No triggered findings were generated from the approved rules."
-        )
+        text += " No approved rule triggered an exception for the report date."
 
     return {
         "block_id": "executive_summary",
