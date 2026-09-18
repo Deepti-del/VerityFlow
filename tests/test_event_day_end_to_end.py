@@ -241,7 +241,9 @@ def test_event_day_end_to_end(monkeypatch, tmp_path):
 
     assert validation["valid"] is True
     assert mapping["confirmed"] is True
-    assert len(mapping["mapped"]) == 18
+    # Only the 15 active report metrics are applied to the calculation frame;
+    # reference-only source fields remain available as supporting evidence.
+    assert len(mapping["mapped"]) == 15
     assert calculation["status"] == "ready"
     assert round(event_row["pr_percent"], 2) == 50.88
     assert round(event_row["generation_kwh"], 0) == 513700

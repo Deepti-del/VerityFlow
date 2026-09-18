@@ -49,7 +49,11 @@ def test_validate_daily_kpis_rejects_non_numeric_required_value():
     result = validate_daily_kpis_sheet(df, customer_id="alpha_solar")
 
     assert result["valid"] is False
-    assert any("generation_kwh" in error for error in result["errors"])
+    assert any(
+        "generation_kwh" in issue.get("affected_columns", [])
+        and issue.get("severity") == "critical"
+        for issue in result["data_quality_issues"]
+    )
 
 
 def test_validate_daily_kpis_warns_on_duplicate_plant_date():

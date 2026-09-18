@@ -197,7 +197,8 @@ def test_daily_values_cannot_be_presented_as_hourly_data():
             time_grain="hourly",
         )
     except ValueError as exc:
-        assert "daily values" in str(exc)
+        assert "Daily KPI data" in str(exc)
+        assert "cannot be converted into hourly or 15-minute values" in str(exc)
     else:
         raise AssertionError("Daily KPI data should not become an hourly chart.")
 
@@ -222,7 +223,8 @@ def test_heatmap_requires_one_metric():
             supplementary_data={"inverter_performance": inverter},
         )
     except ValueError as exc:
-        assert "exactly one" in str(exc)
+        assert "one KPI at a time" in str(exc)
+        assert "Select a single metric" in str(exc)
     else:
         raise AssertionError("A multi-metric heatmap should be rejected.")
 
