@@ -7,6 +7,7 @@ import pandas as pd
 from database import get_calculation_profile
 from formula_utils import validate_formula
 from mapper import apply_mapping
+from relationships import build_formula_relationship_graph
 
 
 REPORT_TYPE = "daily_generation"
@@ -283,6 +284,7 @@ def calculate_daily_kpis(
     analyst-approved.
     """
     profile = get_calculation_profile(customer_id, report_type)
+    relationship_graph = build_formula_relationship_graph(profile)
     working_df = df.copy()
 
     if "date" in working_df.columns:
@@ -299,6 +301,7 @@ def calculate_daily_kpis(
             "rows": [],
             "summary": {},
             "metric_metadata": _profile_metric_metadata(profile),
+            "relationship_graph": relationship_graph,
             "profile": profile,
         }
 
@@ -319,6 +322,7 @@ def calculate_daily_kpis(
         "rows": rows,
         "summary": _summary(working_df, rows),
         "metric_metadata": _profile_metric_metadata(profile),
+        "relationship_graph": relationship_graph,
         "formula_checks": checks,
         "profile": profile,
     }

@@ -20,7 +20,7 @@ DEFAULT_COMPONENTS = [
 
 KPI_CARD_COLUMNS = [
     ("generation_kwh", "Generation", "kWh"),
-    ("gti_kwh_m2", "GTI", "kWh/m2"),
+    ("gti_kwh_m2", "GTI", "kWh/m²"),
     ("pr_percent", "PR", "%"),
     ("cuf_percent", "CUF", "%"),
     ("specific_yield_kwh_per_kwp", "Specific Yield", "kWh/kWp"),
@@ -30,8 +30,8 @@ KPI_CARD_COLUMNS = [
 METRIC_UNITS = {
     "generation_kwh": "kWh",
     "expected_generation_kwh": "kWh",
-    "gti_kwh_m2": "kWh/m2",
-    "gti_wm2": "W/m2",
+    "gti_kwh_m2": "kWh/m²",
+    "gti_wm2": "W/m²",
     "inv_power_kw": "kW",
     "pr_percent": "%",
     "cuf_percent": "%",
@@ -42,6 +42,23 @@ METRIC_UNITS = {
     "clipping_loss_kwh": "kWh",
     "data_availability_percent": "%",
     "availability_percent": "%",
+}
+
+METRIC_LABELS = {
+    "generation_kwh": "Generation",
+    "expected_generation_kwh": "Expected Generation",
+    "gti_kwh_m2": "GTI",
+    "gti_wm2": "GTI",
+    "inv_power_kw": "Inverter Power",
+    "pr_percent": "PR",
+    "cuf_percent": "CUF",
+    "specific_yield_kwh_per_kwp": "Specific Yield",
+    "total_loss_kwh": "Total Loss",
+    "outage_loss_kwh": "Outage Loss",
+    "environmental_loss_kwh": "Environmental Loss",
+    "clipping_loss_kwh": "Clipping Loss",
+    "data_availability_percent": "Data Availability",
+    "availability_percent": "Availability",
 }
 
 METRIC_AGGREGATION_DEFAULTS = {
@@ -69,6 +86,107 @@ WATERFALL_METRICS = [
     "clipping_loss_kwh",
     "generation_kwh",
 ]
+
+
+class ChartCompatibilityError(ValueError):
+    """Analyst-facing chart compatibility failure with developer detail preserved."""
+
+    def __init__(
+        self,
+        *,
+        analyst_reason: str,
+        developer_reason: str,
+        recommended_options: list[str] | None = None,
+        available_metrics: list[str] | None = None,
+    ) -> None:
+        super().__init__(analyst_reason)
+        self.analyst_reason = analyst_reason
+        self.developer_reason = developer_reason
+        self.recommended_options = recommended_options or []
+        self.available_metrics = available_metrics or []
+
+    def to_detail(self) -> dict[str, Any]:
+        return {
+            "message": self.analyst_reason,
+            "analyst_reason": self.analyst_reason,
+            "developer_reason": self.developer_reason,
+            "recommended_options": self.recommended_options,
+            "available_metrics": self.available_metrics,
+        }
+
+
+def _chart_recommendations(chart_type: str) -> list[str]:
+    if chart_type == "waterfall":
+        return ["stacked_bar", "bar", "table"]
+    if chart_type == "heatmap":
+        return ["bar", "table"]
+    if chart_type in {"bar_line", "dual_axis_line"}:
+        return ["line", "bar", "table"]
+    if chart_type == "stacked_bar":
+        return ["bar", "table"]
+    return ["table"]
+
+
+def _chart_purpose(chart_type: str) -> str:
+    purposes = {
+        "line": (
+            "A line chart is used to show how one or more KPIs change over time. "
+            "It needs approved date or timestamp values and numeric KPI values."
+        ),
+        "bar": (
+            "A bar chart is used to compare KPI values across dates, equipment, or "
+            "categories. It needs at least one numeric KPI and a date, equipment, "
+            "or category field to compare against."
+        ),
+        "bar_line": (
+            "A bar + line chart is used when one KPI is best shown as bars and "
+            "another related KPI is best shown as a trend line, such as Generation "
+            "as bars with GTI or PR as a line. It needs at least two numeric KPIs."
+        ),
+        "dual_axis_line": (
+            "A dual-axis line chart is used to compare two time-series KPIs with "
+            "different units or scales, such as Inverter Power and GTI. It needs at "
+            "least two numeric KPIs measured over the same approved time period."
+        ),
+        "stacked_bar": (
+            "A stacked bar chart is used to show how multiple components contribute "
+            "to a total across dates or categories, such as different loss types "
+            "contributing to total loss. It needs at least two numeric components "
+            "or a category-based loss structure."
+        ),
+        "waterfall": (
+            "A waterfall chart explains how a starting value changes through a "
+            "series of positive or negative additions/subtractions to reach a final "
+            "ending total."
+        ),
+        "heatmap": (
+            "A heatmap is used to compare one KPI across equipment or categories "
+            "using colour intensity. For solar performance, this is usually used "
+            "to compare PR, availability, or power across inverters or blocks."
+        ),
+        "table": (
+            "A table is used when the selected data should be reviewed directly "
+            "instead of transformed into a visual shape. It is the safest fallback "
+            "when a chart is not meaningful for the selected KPIs."
+        ),
+    }
+    return purposes.get(chart_type, "This chart needs approved numeric data in a compatible shape.")
+
+
+def _raise_chart_error(
+    chart_type: str,
+    *,
+    analyst_reason: str,
+    developer_reason: str,
+    available_metrics: list[str] | None = None,
+    recommended_options: list[str] | None = None,
+) -> None:
+    raise ChartCompatibilityError(
+        analyst_reason=analyst_reason,
+        developer_reason=developer_reason,
+        recommended_options=recommended_options or _chart_recommendations(chart_type),
+        available_metrics=available_metrics,
+    )
 
 
 def _rows_to_dataframe(calculation_result_or_df: dict | pd.DataFrame) -> pd.DataFrame:
@@ -110,6 +228,20 @@ def _format_evidence_value(metric: str, value: Any) -> str:
     formatted = f"{numeric:,.2f}".rstrip("0").rstrip(".")
     unit = METRIC_UNITS.get(metric, "")
     return f"{formatted}{unit if unit == '%' else f' {unit}' if unit else ''}"
+
+
+def _aggregation_verb(method: str) -> str:
+    return "totaled" if method == "sum" else "averaged"
+
+
+def _dimension_label(dimension: str, count: int) -> str:
+    labels = {
+        "inverter_id": ("inverter", "inverters"),
+        "block_id": ("block", "blocks"),
+        "loss_type": ("loss category", "loss categories"),
+    }
+    singular, plural = labels.get(dimension, (humanize_metric(dimension), humanize_metric(dimension)))
+    return singular if count == 1 else plural
 
 
 def _percent_change(current: Any, previous: Any) -> float | None:
@@ -158,16 +290,17 @@ def _component_evidence(
             lowest_id = str(equipment.index[0])
             lowest_value = float(equipment.iloc[0])
             fleet_average = float(equipment.mean())
+            count = int(len(equipment))
             evidence["metrics"][metric] = {
                 "fleet_average": round(fleet_average, 4),
                 "lowest_equipment": lowest_id,
                 "lowest_value": round(lowest_value, 4),
-                "equipment_count": int(len(equipment)),
+                "equipment_count": count,
             }
             evidence["summary"] = (
                 f"{humanize_metric(metric)} averaged "
                 f"{_format_evidence_value(metric, fleet_average)} across "
-                f"{len(equipment)} {humanize_metric(dimension)} values. "
+                f"{count} {_dimension_label(dimension, count)}. "
                 f"{lowest_id} was lowest at "
                 f"{_format_evidence_value(metric, lowest_value)}."
             )
@@ -179,11 +312,15 @@ def _component_evidence(
             continue
         method = aggregations.get(metric, "average")
         period_value = values.sum() if method == "sum" else values.mean()
+        min_index = values.idxmin()
+        max_index = values.idxmax()
         metric_evidence = {
             "aggregation": method,
             "period_value": round(float(period_value), 6),
             "first_value": round(float(values.iloc[0]), 6),
             "last_value": round(float(values.iloc[-1]), 6),
+            "minimum_value": round(float(values.loc[min_index]), 6),
+            "maximum_value": round(float(values.loc[max_index]), 6),
             "change_percent": _percent_change(values.iloc[-1], values.iloc[0]),
         }
 
@@ -191,6 +328,23 @@ def _component_evidence(
             (column for column in ("timestamp", "date") if column in source_df.columns),
             None,
         )
+        plotted_date_column = next(
+            (column for column in ("timestamp", "date", "_period") if column in plotted_df.columns),
+            None,
+        )
+        if plotted_date_column:
+            min_date = pd.to_datetime(
+                plotted_df.loc[min_index, plotted_date_column],
+                errors="coerce",
+            )
+            max_date = pd.to_datetime(
+                plotted_df.loc[max_index, plotted_date_column],
+                errors="coerce",
+            )
+            if pd.notna(min_date):
+                metric_evidence["minimum_date"] = min_date.strftime("%Y-%m-%d")
+            if pd.notna(max_date):
+                metric_evidence["maximum_date"] = max_date.strftime("%Y-%m-%d")
         if source_date_column and start_date:
             source_dates = pd.to_datetime(source_df[source_date_column], errors="coerce")
             previous_rows = source_df.loc[source_dates < pd.Timestamp(start_date)]
@@ -261,13 +415,38 @@ def _component_evidence(
         evidence["summary"] = summary
         return evidence
 
+    if "data_availability_percent" in evidence["metrics"]:
+        values = evidence["metrics"]["data_availability_percent"]
+        summary = (
+            "Data Availability "
+            f"{_aggregation_verb(values.get('aggregation', 'average'))} "
+            f"{_format_evidence_value('data_availability_percent', values['period_value'])} "
+            "for the selected period."
+        )
+        if values.get("minimum_value") is not None:
+            summary += (
+                " The lowest observed value was "
+                f"{_format_evidence_value('data_availability_percent', values['minimum_value'])}"
+                + (f" on {values['minimum_date']}" if values.get("minimum_date") else "")
+                + "."
+            )
+        if values.get("first_value") != values.get("last_value"):
+            summary += (
+                " It moved from "
+                f"{_format_evidence_value('data_availability_percent', values['first_value'])} "
+                "to "
+                f"{_format_evidence_value('data_availability_percent', values['last_value'])}."
+            )
+        evidence["summary"] = summary
+        return evidence
+
     if {"generation_kwh", "gti_kwh_m2"}.issubset(evidence["metrics"]):
         generation = evidence["metrics"]["generation_kwh"]
         gti = evidence["metrics"]["gti_kwh_m2"]
         evidence["summary"] = (
-            f"Generation was "
+            f"Generation {_aggregation_verb(generation.get('aggregation', 'sum'))} "
             f"{_format_evidence_value('generation_kwh', generation['period_value'])} "
-            f"and GTI was "
+            f"and GTI {_aggregation_verb(gti.get('aggregation', 'average'))} "
             f"{_format_evidence_value('gti_kwh_m2', gti['period_value'])} "
             "for the selected period."
         )
@@ -283,14 +462,37 @@ def _component_evidence(
             loss_metrics,
             key=lambda metric: evidence["metrics"][metric]["period_value"],
         )
+        total_loss = evidence["metrics"].get("total_loss_kwh", {}).get("period_value")
+        if not total_loss and {
+            "expected_generation_kwh",
+            "generation_kwh",
+        }.issubset(evidence["metrics"]):
+            total_loss = (
+                evidence["metrics"]["expected_generation_kwh"]["period_value"]
+                - evidence["metrics"]["generation_kwh"]["period_value"]
+            )
+        share_text = ""
+        if total_loss:
+            share = evidence["metrics"][dominant]["period_value"] / total_loss * 100
+            share_text = f", about {share:.0f}% of selected total losses"
+        bridge_text = ""
+        if {"expected_generation_kwh", "generation_kwh"}.issubset(evidence["metrics"]):
+            bridge_text = (
+                f"Expected Generation was "
+                f"{_format_evidence_value('expected_generation_kwh', evidence['metrics']['expected_generation_kwh']['period_value'])} "
+                f"and actual Generation was "
+                f"{_format_evidence_value('generation_kwh', evidence['metrics']['generation_kwh']['period_value'])}. "
+            )
         evidence["summary"] = (
+            f"{bridge_text}"
             f"{humanize_metric(dominant)} was the largest selected loss category "
-            f"at {_format_evidence_value(dominant, evidence['metrics'][dominant]['period_value'])}."
+            f"at {_format_evidence_value(dominant, evidence['metrics'][dominant]['period_value'])}"
+            f"{share_text}."
         )
         return evidence
 
     phrases = [
-        f"{humanize_metric(metric)} "
+        f"{humanize_metric(metric)} {_aggregation_verb(values.get('aggregation', 'average'))} "
         f"{_format_evidence_value(metric, values['period_value'])}"
         for metric, values in evidence["metrics"].items()
     ]
@@ -374,7 +576,7 @@ def _generation_vs_gti(
                 "name": "GTI",
                 "metric": "gti_kwh_m2",
                 "type": "line",
-                "unit": "kWh/m2",
+                "unit": "kWh/m²",
                 "y": _values(df, "gti_kwh_m2"),
                 "axis": "right",
             },
@@ -484,7 +686,7 @@ def _inv_pow_gti(
                 "name": "GTI",
                 "metric": "gti_wm2",
                 "type": "line",
-                "unit": "W/m2",
+                "unit": "W/m²",
                 "axis": "right",
                 "y": _values(timeseries, "gti_wm2"),
             },
@@ -974,15 +1176,48 @@ def build_report_component(
             f"{source_coverage['end_date']}."
             if source_coverage else ""
         )
-        raise ValueError(
-            "No approved data exists for the selected date range." + available
+        _raise_chart_error(
+            chart_type,
+            analyst_reason=(
+                f"{_chart_purpose(chart_type)} This request cannot be generated "
+                "for the selected period because ReportGen did not find approved "
+                "data in that date range."
+                + available
+            ),
+            developer_reason="filtered dataframe is empty for selected date range",
+            available_metrics=list(source_df.columns),
         )
 
     metrics = list(dict.fromkeys(requested_metrics))
     missing = [metric for metric in metrics if metric not in df.columns]
     if missing:
-        raise ValueError(
-            "The selected data does not contain: " + ", ".join(missing)
+        if chart_type == "waterfall":
+            _raise_chart_error(
+                chart_type,
+                analyst_reason=(
+                    "This waterfall chart cannot be generated from the selected KPIs. "
+                    "A waterfall chart explains how a starting value changes through "
+                    "a series of positive or negative additions/subtractions to reach "
+                    "a final ending total. For a generation-loss waterfall, ReportGen "
+                    "needs the starting expected generation, the loss components, and "
+                    "the ending actual generation. The selected approved data does not "
+                    f"include: {', '.join(humanize_metric(metric) for metric in missing)}. "
+                    "Use stacked bar, bar chart, or table if you only want to compare "
+                    "loss categories."
+                ),
+                developer_reason="missing metric columns: " + ", ".join(missing),
+                recommended_options=["stacked_bar", "bar", "table"],
+                available_metrics=list(df.columns),
+            )
+        _raise_chart_error(
+            chart_type,
+            analyst_reason=(
+                f"{_chart_purpose(chart_type)} This request cannot be generated because the selected approved "
+                "data source does not contain every KPI needed for the request. "
+                f"Missing KPI(s): {', '.join(humanize_metric(metric) for metric in missing)}."
+            ),
+            developer_reason="missing metric columns: " + ", ".join(missing),
+            available_metrics=list(df.columns),
         )
     numeric_metrics = [
         metric for metric in metrics
@@ -990,31 +1225,76 @@ def build_report_component(
     ]
     if len(numeric_metrics) != len(metrics):
         invalid = [metric for metric in metrics if metric not in numeric_metrics]
-        raise ValueError(
-            "Report metrics must be numeric: " + ", ".join(invalid)
+        _raise_chart_error(
+            chart_type,
+            analyst_reason=(
+                f"{_chart_purpose(chart_type)} This request needs numeric KPI values so the backend can calculate "
+                "the visual from approved data. The selected field(s) are not numeric: "
+                f"{', '.join(humanize_metric(metric) for metric in invalid)}."
+            ),
+            developer_reason="non-numeric metric columns: " + ", ".join(invalid),
+            available_metrics=list(df.columns),
         )
 
     if chart_type == "heatmap" and breakdown == "site_total":
-        raise ValueError(
-            "A heatmap needs a block or inverter breakdown. "
-            "Choose 'By inverter' or 'By block'."
+        _raise_chart_error(
+            chart_type,
+            analyst_reason=(
+                f"{_chart_purpose(chart_type)} Choose 'By inverter' or 'By block' "
+                "instead of site total so ReportGen knows what rows to compare."
+            ),
+            developer_reason="heatmap requested with site_total breakdown",
+            available_metrics=list(df.columns),
         )
     if chart_type == "heatmap" and len(metrics) != 1:
-        raise ValueError("A heatmap requires exactly one numeric metric.")
+        _raise_chart_error(
+            chart_type,
+            analyst_reason=(
+                f"{_chart_purpose(chart_type)} A heatmap shows intensity for one KPI at a time. Select a single "
+                "metric such as PR, availability, or inverter power, then choose "
+                "an equipment breakdown."
+            ),
+            developer_reason=f"heatmap requested with {len(metrics)} metrics",
+            available_metrics=list(df.columns),
+        )
     if chart_type in {"bar_line", "dual_axis_line", "stacked_bar"} and len(metrics) < 2:
-        raise ValueError(
-            f"{humanize_metric(chart_type)} requires at least two metrics."
+        _raise_chart_error(
+            chart_type,
+            analyst_reason=(
+                f"{_chart_purpose(chart_type)} Select at least two numeric KPIs, "
+                "or use a line, bar, or table when you only want to show one KPI."
+            ),
+            developer_reason=f"{chart_type} requested with fewer than two metrics",
+            available_metrics=list(df.columns),
         )
     if chart_type == "waterfall" and breakdown != "site_total":
-        raise ValueError("A waterfall currently requires the site-total breakdown.")
+        _raise_chart_error(
+            chart_type,
+            analyst_reason=(
+                f"{_chart_purpose(chart_type)} "
+                "For the current ReportGen waterfall, use the site-total breakdown so "
+                "the generation bridge can be calculated consistently."
+            ),
+            developer_reason="waterfall requested with non-site-total breakdown",
+            available_metrics=list(df.columns),
+        )
     if (
         source_coverage
         and source_coverage["native_grain"] == "daily"
         and time_grain in {"15_minute", "hourly"}
     ):
-        raise ValueError(
-            "The selected metrics contain daily values; "
-            f"{humanize_metric(time_grain)} data cannot be generated from them."
+        _raise_chart_error(
+            chart_type,
+            analyst_reason=(
+                f"{_chart_purpose(chart_type)} This request asks for a more detailed time grain than the approved "
+                "data contains. Daily KPI data can be shown as daily trends, bars, "
+                "tables, or daily heatmaps, but it cannot be converted into hourly "
+                "or 15-minute values unless that interval data is present in the source."
+            ),
+            developer_reason=(
+                f"{time_grain} requested from daily native grain"
+            ),
+            available_metrics=list(df.columns),
         )
 
     df, date_column, resolved_aggregations = _aggregate_for_chart(
@@ -1026,7 +1306,16 @@ def build_report_component(
         time_grain=time_grain,
     )
     if df.empty:
-        raise ValueError("No approved data remains after aggregation.")
+        _raise_chart_error(
+            chart_type,
+            analyst_reason=(
+                f"{_chart_purpose(chart_type)} This request could not be generated after applying the selected "
+                "aggregation policy. Try a wider date range, a different time grain, "
+                "or table view to inspect the approved data."
+            ),
+            developer_reason="aggregated dataframe is empty",
+            available_metrics=list(source_df.columns),
+        )
 
     if chart_type == "waterfall":
         spec, skipped = _loss_waterfall(
@@ -1034,7 +1323,22 @@ def build_report_component(
             supplementary_data,
         )
         if skipped:
-            raise ValueError(skipped["message"])
+            missing_columns = skipped.get("missing_columns", [])
+            _raise_chart_error(
+                chart_type,
+                analyst_reason=(
+                    "This waterfall chart cannot be generated from the selected KPIs. "
+                    f"{_chart_purpose(chart_type)} For a generation-loss waterfall, ReportGen "
+                    "needs the starting expected generation, the loss components, and "
+                    "the ending actual generation. The selected approved data does not "
+                    f"include: {', '.join(humanize_metric(metric) for metric in missing_columns)}. "
+                    "Use stacked bar, bar chart, or table if you only want to compare "
+                    "loss categories."
+                ),
+                developer_reason=skipped["message"],
+                recommended_options=["stacked_bar", "bar", "table"],
+                available_metrics=list(df.columns),
+            )
         component = {
             **spec,
             "component_id": component_id,
@@ -1202,4 +1506,6 @@ def build_report_component(
 
 
 def humanize_metric(metric: str) -> str:
+    if metric in METRIC_LABELS:
+        return METRIC_LABELS[metric]
     return " ".join(word.capitalize() for word in metric.split("_"))

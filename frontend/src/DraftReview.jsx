@@ -5,6 +5,36 @@ const palette = ["#0c66e4", "#e05a47", "#36b37e", "#f5a623"];
 const humanize = (value = "") => value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const number = (value, suffix = "") => value == null ? "—" : `${fmt.format(value)}${suffix}`;
 const splitMetrics = (value = "") => value.split(",").map((item) => item.trim()).filter(Boolean);
+const metricLabels = {
+  generation_kwh: ["Generation", "kWh"],
+  expected_generation_kwh: ["Expected Generation", "kWh"],
+  total_loss_kwh: ["Total Loss", "kWh"],
+  outage_loss_kwh: ["Outage Loss", "kWh"],
+  environmental_loss_kwh: ["Environmental Loss", "kWh"],
+  clipping_loss_kwh: ["Clipping Loss", "kWh"],
+  gti_kwh_m2: ["GTI", "kWh/m²"],
+  gti_wm2: ["GTI", "W/m²"],
+  pr_percent: ["PR", "%"],
+  cuf_percent: ["CUF", "%"],
+  specific_yield_kwh_per_kwp: ["Specific Yield", "kWh/kWp"],
+  inv_power_kw: ["Inverter Power", "kW"],
+  data_availability_percent: ["Data Availability", "%"],
+  availability_percent: ["Availability", "%"],
+  peak_power_kw: ["Peak Power", "kW"],
+  min_data_availability_percent: ["Minimum Data Availability", "%"],
+  min_pr_percent: ["Minimum PR", "%"],
+  pr_drop_threshold_pct: ["PR Drop Threshold", "%"],
+  min_specific_yield_kwh_per_kwp: ["Minimum Specific Yield", "kWh/kWp"],
+  max_total_loss_kwh: ["Maximum Total Loss", "kWh"],
+};
+const metricLabel = (metric = "") => metricLabels[metric]?.[0] || humanize(metric);
+const metricUnit = (metric = "") => metricLabels[metric]?.[1] || "";
+const formatMetricValue = (metric, value) => {
+  if (typeof value !== "number") return String(value);
+  const unit = metricUnit(metric);
+  if (unit === "%") return `${fmt.format(value)}%`;
+  return `${fmt.format(value)}${unit ? ` ${unit}` : ""}`;
+};
 const WATERFALL_METRICS = [
   "expected_generation_kwh",
   "outage_loss_kwh",
@@ -18,6 +48,36 @@ const themeNames = {
   executive: "Executive",
   operations: "Operations",
 };
+
+function formatRequestError(error) {
+  const detail = error?.detail;
+  if (!detail || typeof detail !== "object") return error.message;
+  const parts = [detail.analyst_reason || detail.message || error.message];
+  if (detail.recommended_options?.length) {
+    parts.push(`Recommended alternatives: ${detail.recommended_options.map(humanize).join(", ")}.`);
+  }
+  return parts.join(" ");
+}
+
+function chartPurpose(chartType = "chart") {
+  const purposes = {
+    line: "A line chart shows how one or more KPIs change over time.",
+    bar: "A bar chart compares KPI values across dates, equipment, or categories.",
+    bar_line: "A bar + line chart compares related KPIs where one is clearer as bars and another as a trend line, such as Generation with GTI or PR.",
+    dual_axis_line: "A dual-axis line chart compares two time-series KPIs with different units or scales, such as Inverter Power and GTI.",
+    stacked_bar: "A stacked bar chart shows how multiple components contribute to a total across dates or categories.",
+    waterfall: "A waterfall chart explains how a starting value changes through positive or negative additions/subtractions to reach an ending total.",
+    heatmap: "A heatmap compares one KPI across equipment or categories using colour intensity.",
+    table: "A table shows the approved data directly when a chart shape is not meaningful.",
+  };
+  return purposes[chartType] || "This chart needs approved data in a compatible shape.";
+}
+
+const slugify = (value = "reportgen-report") => value
+  .toLowerCase()
+  .replace(/[^a-z0-9]+/g, "-")
+  .replace(/^-+|-+$/g, "")
+  || "reportgen-report";
 
 function componentDefaultMetrics(component) {
   return component.series?.map((series) => series.metric).filter(Boolean).join(", ")
@@ -116,7 +176,7 @@ function relatedFindingsFor(component, review, findings, findingReview, reportDa
 }
 
 function ComponentFindings({ findings }) {
-  if (!findings.length) return <div className="component-findings empty-rail"><strong>No linked finding yet</strong><p>This evidence can remain as supporting context, or the analyst can add a narrative note.</p></div>;
+  if (!findings.length) return null;
   return <aside className="component-findings"><span>Decision notes</span>{findings.map((finding, index) => <div className="component-finding" key={finding.finding_id || finding.rule_id || index}><Status tone={finding.severity === "high" ? "danger" : "warn"}>{finding.severity || "review"}</Status><strong>{finding.title || humanize(finding.rule_name || "Finding")}</strong><p>{finding.finding || finding.message || finding.description}</p>{finding.suggestion && <small>{finding.suggestion}</small>}</div>)}</aside>;
 }
 
@@ -147,29 +207,40 @@ function evidenceSignature(component, review, findings) {
 }
 
 function metricEvidencePhrase(key, value) {
-  const label = humanize(key);
-  if (typeof value === "number") return `${label} ${fmt.format(value)}${key.includes("percent") ? "%" : ""}`;
+  const label = metricLabel(key);
+  if (typeof value === "number") return `${label} ${formatMetricValue(key, value)}`;
   return `${label} ${value}`;
+}
+
+function findingEvidenceSentence(finding) {
+  const evidence = finding.evidence || {};
+  const thresholdEntries = Object.entries(evidence.thresholds || {});
+  const metricEvidence = Object.entries(evidence)
+    .filter(([key, value]) => !["thresholds", "row_index", "date"].includes(key) && value != null)
+    .slice(0, 4)
+    .map(([key, value]) => metricEvidencePhrase(key, value));
+  const context = [];
+  if (evidence.date) context.push(`The rule fired on ${String(evidence.date).slice(0, 10)}`);
+  if (metricEvidence.length) context.push(metricEvidence.join(", "));
+  if (thresholdEntries.length) {
+    context.push(`approved threshold: ${thresholdEntries.map(([key, value]) => metricEvidencePhrase(key, value)).join(", ")}`);
+  }
+  return context.length ? `Evidence: ${context.join("; ")}.` : "";
 }
 
 function suggestedExplanation(component, review, findings) {
   const evidenceSummary = component.evidence_summary?.summary;
   if (!findings.length) {
     return evidenceSummary
-      || `No approved business rule triggered a finding for ${review.title || component.title}; the chart is included as supporting evidence.`;
+      || `Supporting evidence is available for ${review.title || component.title}. No approved exception rule triggered for the selected period.`;
   }
   const findingText = findings.map((finding) => {
-    const evidence = Object.entries(finding.evidence || {})
-      .filter(([key, value]) => !["thresholds", "row_index", "date"].includes(key) && value != null)
-      .slice(0, 4)
-      .map(([key, value]) => metricEvidencePhrase(key, value));
     const message = finding.message || `${humanize(finding.rule_name || "The approved rule")} was triggered.`;
-    return evidence.length
-      ? `${message} Evidence: ${evidence.join(", ")}.`
-      : message;
+    const evidence = findingEvidenceSentence(finding);
+    return evidence ? `${finding.rule_name ? `${humanize(finding.rule_name)} — ` : ""}${message} ${evidence}` : message;
   }).join(" ");
   return evidenceSummary
-    ? `${evidenceSummary} ${findingText}`
+    ? `Selected-period evidence: ${evidenceSummary} Approved-rule exception: ${findingText}`
     : findingText;
 }
 
@@ -177,16 +248,19 @@ function componentEvidenceLabels(component) {
   const labels = [];
   for (const [metric, values] of Object.entries(component.evidence_summary?.metrics || {})) {
     if (values.period_value != null) {
-      labels.push(`${humanize(metric)} · ${fmt.format(values.period_value)}`);
+      labels.push(`${metricLabel(metric)} · ${formatMetricValue(metric, values.period_value)}`);
     }
     if (values.previous_value != null) {
-      labels.push(`Previous ${humanize(metric)} · ${fmt.format(values.previous_value)}`);
+      labels.push(`Previous ${metricLabel(metric)} · ${formatMetricValue(metric, values.previous_value)}`);
+    }
+    if (values.minimum_value != null) {
+      labels.push(`Lowest ${metricLabel(metric)} · ${formatMetricValue(metric, values.minimum_value)}${values.minimum_date ? ` on ${values.minimum_date}` : ""}`);
     }
     if (values.fleet_average != null) {
-      labels.push(`Fleet average · ${fmt.format(values.fleet_average)}`);
+      labels.push(`Fleet average · ${formatMetricValue(metric, values.fleet_average)}`);
     }
     if (values.lowest_equipment) {
-      labels.push(`Lowest · ${values.lowest_equipment} (${fmt.format(values.lowest_value)})`);
+      labels.push(`Lowest · ${values.lowest_equipment} (${formatMetricValue(metric, values.lowest_value)})`);
     }
   }
   const relationship = component.evidence_summary?.relationship;
@@ -237,33 +311,33 @@ function ChartPlanEditor({
   const compatibilityIssues = [];
   if (!sourceCapability) {
     compatibilityIssues.push(
-      `No approved ${humanize(breakdown)} source contains all selected metrics.`,
+      `${chartPurpose(chartType)} ReportGen could not find one approved ${humanize(breakdown)} data source that contains all selected KPIs. Choose KPIs from the same approved source, change the breakdown, or use table view to inspect the available data.`,
     );
   } else {
     if (startDate && startDate < sourceCapability.start_date) {
       compatibilityIssues.push(
-        `Start date is before the available data (${sourceCapability.start_date}).`,
+        `${chartPurpose(chartType)} The selected start date is before the approved data begins (${sourceCapability.start_date}). Choose a date inside the available range.`,
       );
     }
     if (endDate && endDate > sourceCapability.end_date) {
       compatibilityIssues.push(
-        `End date is after the available data (${sourceCapability.end_date}).`,
+        `${chartPurpose(chartType)} The selected end date is after the approved data ends (${sourceCapability.end_date}). Choose a date inside the available range.`,
       );
     }
     if (!availableTimeGrains.includes(timeGrain)) {
       compatibilityIssues.push(
-        `${humanize(timeGrain)} cannot be generated from ${sourceCapability.native_grain} data.`,
+        `${chartPurpose(chartType)} ${humanize(timeGrain)} values cannot be generated from ${humanize(sourceCapability.native_grain)} data. Select a supported time grain, or connect source data at the interval needed for this chart.`,
       );
     }
   }
   if (startDate && endDate && startDate > endDate) {
-    compatibilityIssues.push("Start date must not be after end date.");
+    compatibilityIssues.push(`${chartPurpose(chartType)} The start date must be on or before the end date.`);
   }
   if (chartType === "heatmap" && metricList.length !== 1) {
-    compatibilityIssues.push("A heatmap requires exactly one metric.");
+    compatibilityIssues.push(`${chartPurpose(chartType)} Select exactly one KPI, then choose an inverter, block, or category breakdown.`);
   }
   if (["bar_line", "dual_axis_line", "stacked_bar"].includes(chartType) && metricList.length < 2) {
-    compatibilityIssues.push(`${humanize(chartType)} requires at least two metrics.`);
+    compatibilityIssues.push(`${chartPurpose(chartType)} Select at least two numeric KPIs, or use line, bar, or table for a single KPI.`);
   }
   const pending = componentHasPendingChanges(component, {
     ...review,
@@ -505,13 +579,20 @@ export default function DraftReview({
     preparedFor: customer?.customer_name || "Customer",
     customerLogoLabel: "AS",
     companyLogoLabel: "RG",
+    logoPlacement: "both_header",
     ...reportIdentity,
   };
+  const customerLogo = <div className="preview-logo customer">{identity.customerLogoLabel || "AS"}</div>;
+  const companyLogo = <div className="preview-logo company">{identity.companyLogoLabel || "RG"}</div>;
+  const headerCustomerLogo = ["both_header", "customer_header_company_footer", "customer_only_header"].includes(identity.logoPlacement);
+  const headerCompanyLogo = ["both_header", "company_header_customer_footer", "company_only_header"].includes(identity.logoPlacement);
+  const footerCustomerLogo = ["both_footer", "company_header_customer_footer"].includes(identity.logoPlacement);
+  const footerCompanyLogo = ["both_footer", "customer_header_company_footer"].includes(identity.logoPlacement);
   const components = [...(draft.chart_specs || []), ...(draft.tables || [])];
   const pending = draft.pending_approvals || [];
   const fallbackCards = [
     ["generation_kwh", "Generation", "kWh"],
-    ["gti_kwh_m2", "GTI", "kWh/m2"],
+    ["gti_kwh_m2", "GTI", "kWh/m²"],
     ["pr_percent", "PR", "%"],
     ["specific_yield_kwh_per_kwp", "Specific Yield", "kWh/kWp"],
     ["total_loss_kwh", "Total Loss", "kWh"],
@@ -650,9 +731,10 @@ export default function DraftReview({
       });
       setNotice(`${review.title || component.title} regenerated from approved backend data.`);
     } catch (error) {
-      setLocalError(error.message);
+      const message = formatRequestError(error);
+      setLocalError(message);
       updateComponent(component.component_id, {
-        regenerationError: error.message,
+        regenerationError: message,
       });
     } finally {
       setWorkingComponent("");
@@ -821,16 +903,34 @@ export default function DraftReview({
     : null;
   const kpiPanel = <div className="kpi-grid dynamic-kpis">{kpiCards.map((card) => <article key={card.metric}><span>{kpiReview[card.metric]?.label || card.label}</span><strong>{number(card.value, card.unit ? ` ${card.unit}` : "")}</strong></article>)}</div>;
 
+  const exportPdf = () => {
+    const previousTitle = document.title;
+    const fileLabel = slugify([
+      identity.reportTitle,
+      customer?.customer_name,
+      reportDate,
+    ].filter(Boolean).join(" "));
+    document.title = `${fileLabel}.pdf`;
+    window.setTimeout(() => {
+      window.print();
+      window.setTimeout(() => {
+        document.title = previousTitle;
+      }, 500);
+    }, 50);
+  };
+
   if (mode === "preview") {
     return <div className={`customer-report theme-${reportTheme}`}>
-      <div className="builder-mode-bar"><div><Status tone={draftApproved ? "success" : "warn"}>{draftApproved ? "Approved and locked" : "Customer preview"}</Status><span>{themeNames[reportTheme]} · Layout v{reportLayout?.version || "unsaved"}</span></div><Button onClick={() => setMode("build")}>{draftApproved ? "View approved configuration" : "Back to builder"}</Button></div>
+      <div className="builder-mode-bar preview-actions"><div><Status tone={draftApproved ? "success" : "warn"}>{draftApproved ? "Approved and locked" : "Customer preview"}</Status><span>{themeNames[reportTheme]} · Layout v{reportLayout?.version || "unsaved"}</span></div><div><Button onClick={exportPdf}>Export PDF</Button><button className="button secondary" onClick={() => setMode("build")}>{draftApproved ? "View approved configuration" : "Back to builder"}</button></div></div>
       {componentsNeedingRegeneration.length > 0 && <div className="alert error">Preview is showing the last valid charts. Regenerate {componentsNeedingRegeneration.length} changed component(s) before saving or approving this report.</div>}
-      <article className="report-preview-header"><div className="preview-logo customer">{identity.customerLogoLabel || "AS"}</div><div className="preview-title-block"><span>{customer?.customer_name || "Alpha Solar"} · {humanize(reportType)}</span><h1>{identity.reportTitle}</h1><p>{identity.reportSubtitle}</p><div className="preview-meta"><small>Prepared for <b>{identity.preparedFor}</b></small><small>Prepared by <b>{identity.preparedBy}</b></small><small>Report date <b>{reportDate}</b></small></div></div><div className="preview-logo company">{identity.companyLogoLabel || "RG"}</div></article>
-      {summaryPosition === "top" && summaryPanel}
-      {kpiPanel}
-      {summaryPosition === "after_kpis" && summaryPanel}
-      <div className="customer-component-grid">{orderedComponents.filter((component) => chartReview[component.component_id]?.included ?? true).map((component, index) => { const review = chartReview[component.component_id] || { title: component.title }; const linked = relatedFindingsFor(component, review, findings, findingReview, reportDate); return <section className={`customer-report-component width-${review.width || "full"}`} key={component.component_id || index}><h2>{review.title || component.title}</h2><ReportEvidence component={component} review={review} findings={linked} ChartRenderer={ChartRenderer} /></section>; })}</div>
-      <footer className="report-lock-note">Approved report snapshot · Values calculated deterministically · Narrative approved by {identity.preparedBy}</footer>
+      <div className="customer-report-paper">
+        <article className="report-preview-header"><div className="preview-logo-slot">{headerCustomerLogo ? customerLogo : null}</div><div className="preview-title-block"><span>{customer?.customer_name || "Alpha Solar"} · {humanize(reportType)}</span><h1>{identity.reportTitle}</h1><p>{identity.reportSubtitle}</p><div className="preview-meta"><small>Prepared for <b>{identity.preparedFor}</b></small><small>Prepared by <b>{identity.preparedBy}</b></small><small>Report date <b>{reportDate}</b></small></div></div><div className="preview-logo-slot company-slot">{headerCompanyLogo ? companyLogo : null}</div></article>
+        {summaryPosition === "top" && summaryPanel}
+        {kpiPanel}
+        {summaryPosition === "after_kpis" && summaryPanel}
+        <div className="customer-component-grid">{orderedComponents.filter((component) => chartReview[component.component_id]?.included ?? true).map((component, index) => { const review = chartReview[component.component_id] || { title: component.title }; const linked = relatedFindingsFor(component, review, findings, findingReview, reportDate); return <section className={`customer-report-component width-${review.width || "full"}`} key={component.component_id || index}><h2>{review.title || component.title}</h2><ReportEvidence component={component} review={review} findings={linked} ChartRenderer={ChartRenderer} /></section>; })}</div>
+        <footer className="report-lock-note"><div className="report-footer-logos">{footerCustomerLogo ? customerLogo : null}{footerCompanyLogo ? companyLogo : null}</div><span>Approved report snapshot · Values calculated deterministically · Narrative approved by {identity.preparedBy}</span></footer>
+      </div>
     </div>;
   }
 

@@ -23,6 +23,9 @@ def create_tables():
         parent_company      TEXT,
         customer_reference  TEXT,
         logo_path           TEXT,
+        customer_logo_label TEXT,
+        company_logo_label  TEXT,
+        logo_placement      TEXT DEFAULT 'both_header',
         pr_target_pct       REAL DEFAULT 75.0,
         recipients          TEXT DEFAULT '[]',
         delivery_schedule   TEXT,
@@ -258,6 +261,15 @@ def ensure_customer_columns(cursor):
         "parent_company": "ALTER TABLE customers ADD COLUMN parent_company TEXT",
         "customer_reference": (
             "ALTER TABLE customers ADD COLUMN customer_reference TEXT"
+        ),
+        "customer_logo_label": (
+            "ALTER TABLE customers ADD COLUMN customer_logo_label TEXT"
+        ),
+        "company_logo_label": (
+            "ALTER TABLE customers ADD COLUMN company_logo_label TEXT"
+        ),
+        "logo_placement": (
+            "ALTER TABLE customers ADD COLUMN logo_placement TEXT DEFAULT 'both_header'"
         ),
     }
 
@@ -754,7 +766,7 @@ def seed_default_data():
         },
         "gti_kwh_m2": {
             "label": "GTI",
-            "unit": "kWh/m2",
+            "unit": "kWh/m²",
             "formula": "mean(gti_kwh_m2)"
         },
         "pr_percent": {
@@ -934,7 +946,7 @@ def seed_default_data():
             "column_category": "required_source",
             "formula": "",
             "input_columns": [],
-            "unit": "kWh/m2",
+            "unit": "kWh/m²",
             "good_range": "5.0-8.0",
             "poor_threshold": "<3.0",
             "scope": "global",

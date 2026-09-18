@@ -5,7 +5,7 @@ REPORT_TYPE = "daily_generation"
 
 KEY_KPI_LABELS = {
     "generation_kwh": ("Generation", "kWh"),
-    "gti_kwh_m2": ("GTI", "kWh/m2"),
+    "gti_kwh_m2": ("GTI", "kWh/m²"),
     "pr_percent": ("PR", "%"),
     "cuf_percent": ("CUF", "%"),
     "specific_yield_kwh_per_kwp": ("Specific Yield", "kWh/kWp"),

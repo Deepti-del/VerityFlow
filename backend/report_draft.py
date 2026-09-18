@@ -184,6 +184,7 @@ def assemble_report_draft(
                 "valid": calculation_result.get("valid"),
                 "status": calculation_result.get("status"),
                 "summary": calculation_result.get("summary") or {},
+                "relationship_graph": calculation_result.get("relationship_graph") or {},
             },
             "insights": {
                 "valid": (insights_result or {}).get("valid"),

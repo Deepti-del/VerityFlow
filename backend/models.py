@@ -6,6 +6,14 @@ from pydantic import BaseModel, Field
 Scope = Literal["customer_report_type", "customer", "report_type", "global"]
 ReportTheme = Literal["corporate_blue", "minimal", "executive", "operations"]
 SummaryPosition = Literal["top", "after_kpis"]
+LogoPlacement = Literal[
+    "both_header",
+    "customer_header_company_footer",
+    "company_header_customer_footer",
+    "both_footer",
+    "customer_only_header",
+    "company_only_header",
+]
 TextPosition = Literal["above", "beside", "below"]
 ChartType = Literal[
     "line",
@@ -121,6 +129,9 @@ class CreateCustomerRequest(BaseModel):
     customer_name: str = Field(min_length=2, max_length=120)
     parent_company: str | None = Field(default=None, max_length=120)
     customer_reference: str | None = Field(default=None, max_length=80)
+    customer_logo_label: str | None = Field(default=None, max_length=12)
+    company_logo_label: str | None = Field(default="RG", max_length=12)
+    logo_placement: LogoPlacement = "both_header"
     site_name: str = Field(min_length=2, max_length=120)
     location: str | None = Field(default=None, max_length=160)
     timezone: str = Field(default="Asia/Kolkata", min_length=1, max_length=80)
@@ -133,6 +144,21 @@ class CreateCustomerRequest(BaseModel):
         min_length=2,
         max_length=120,
     )
+
+
+class UpdateCustomerProfileRequest(BaseModel):
+    customer_name: str = Field(min_length=2, max_length=120)
+    parent_company: str | None = Field(default=None, max_length=120)
+    customer_reference: str | None = Field(default=None, max_length=80)
+    customer_logo_label: str | None = Field(default=None, max_length=12)
+    company_logo_label: str | None = Field(default="RG", max_length=12)
+    logo_placement: LogoPlacement = "both_header"
+    site_id: str
+    site_name: str = Field(min_length=2, max_length=120)
+    location: str | None = Field(default=None, max_length=160)
+    timezone: str = Field(default="Asia/Kolkata", min_length=1, max_length=80)
+    dc_capacity_kwp: float | None = Field(default=None, gt=0)
+    ac_capacity_kw: float | None = Field(default=None, gt=0)
 
 
 class ReportComponentRequest(BaseModel):

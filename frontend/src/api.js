@@ -3,7 +3,15 @@ const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 async function request(path, options = {}) {
   const response = await fetch(`${API_URL}${path}`, options);
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.detail || "The request could not be completed.");
+  if (!response.ok) {
+    const detail = data.detail;
+    const message = typeof detail === "object" && detail !== null
+      ? detail.analyst_reason || detail.message || "The request could not be completed."
+      : detail || "The request could not be completed.";
+    const error = new Error(message);
+    error.detail = detail;
+    throw error;
+  }
   return data;
 }
 
@@ -12,6 +20,9 @@ export const api = {
   customerContext: (customerId) => request(`/customers/${customerId}/context`),
   createCustomer: (body) => request("/customers", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  }),
+  updateCustomerProfile: (customerId, body) => request(`/customers/${customerId}/profile`, {
+    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }),
   profile: (customerId, reportType) => request(`/profile/${customerId}/${reportType}`),
   upload: (file) => {

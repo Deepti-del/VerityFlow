@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from answer_planner import build_answer_plan
 from calculator import calculate_daily_kpis_from_excel
 from charts import (
+    ChartCompatibilityError,
     build_chart_capabilities,
     build_chart_specs,
     build_report_component,
@@ -46,6 +47,7 @@ from models import (
     BigQuerySourceRequest,
     BigQuerySourceResponse,
     CreateCustomerRequest,
+    UpdateCustomerProfileRequest,
     ApproveReportLayoutRequest,
     ApproveReportSnapshotRequest,
     ProfileResponse,
@@ -209,6 +211,8 @@ def _configuration(config_id: str) -> dict[str, Any]:
 async def upload(file: UploadFile = File(...)):
     try:
         file_id = save_upload(await file.read(), file.filename or "upload.xlsx")
+    except ChartCompatibilityError as exc:
+        raise HTTPException(status_code=400, detail=exc.to_detail()) from exc
     except ValueError as exc:
         raise _http_error(400, str(exc)) from exc
 
@@ -493,6 +497,9 @@ def customers():
             c.customer_name,
             c.parent_company,
             c.customer_reference,
+            c.customer_logo_label,
+            c.company_logo_label,
+            c.logo_placement,
             c.status,
             COUNT(r.report_id) AS report_count,
             MAX(r.report_date) AS last_report_date,
@@ -503,7 +510,8 @@ def customers():
         FROM customers c
         LEFT JOIN report_history r ON r.customer_id = c.customer_id
         GROUP BY c.customer_id, c.customer_name, c.parent_company,
-                 c.customer_reference, c.status
+                 c.customer_reference, c.customer_logo_label,
+                 c.company_logo_label, c.logo_placement, c.status
         ORDER BY c.customer_name
     """)
     rows = [dict(row) for row in cursor.fetchall()]
@@ -566,13 +574,17 @@ def create_customer(request: CreateCustomerRequest):
     try:
         cursor.execute("""
             INSERT INTO customers
-            (customer_id, customer_name, parent_company, customer_reference, status)
-            VALUES (?, ?, ?, ?, ?)
+            (customer_id, customer_name, parent_company, customer_reference,
+             customer_logo_label, company_logo_label, logo_placement, status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             customer_id,
             request.customer_name.strip(),
             request.parent_company.strip() if request.parent_company else None,
             request.customer_reference.strip() if request.customer_reference else None,
+            (request.customer_logo_label or _slug(request.customer_name).replace("_", " ")[:2]).strip().upper(),
+            (request.company_logo_label or "RG").strip().upper(),
+            request.logo_placement,
             "pending_first_approval",
         ))
         cursor.execute("""
@@ -617,6 +629,64 @@ def create_customer(request: CreateCustomerRequest):
         "report_type": request.report_type,
         "reporting_period": request.reporting_period,
     }
+
+
+@app.put("/customers/{customer_id}/profile")
+def update_customer_profile(customer_id: str, request: UpdateCustomerProfileRequest):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT 1 FROM customers WHERE customer_id = ?", (customer_id,))
+    if cursor.fetchone() is None:
+        conn.close()
+        raise _http_error(404, "Customer not found.")
+    cursor.execute(
+        "SELECT 1 FROM customer_sites WHERE site_id = ? AND customer_id = ?",
+        (request.site_id, customer_id),
+    )
+    if cursor.fetchone() is None:
+        conn.close()
+        raise _http_error(404, "Customer site not found.")
+
+    cursor.execute("""
+        UPDATE customers
+        SET customer_name = ?,
+            parent_company = ?,
+            customer_reference = ?,
+            customer_logo_label = ?,
+            company_logo_label = ?,
+            logo_placement = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE customer_id = ?
+    """, (
+        request.customer_name.strip(),
+        request.parent_company.strip() if request.parent_company else None,
+        request.customer_reference.strip() if request.customer_reference else None,
+        (request.customer_logo_label or "").strip().upper() or None,
+        (request.company_logo_label or "RG").strip().upper(),
+        request.logo_placement,
+        customer_id,
+    ))
+    cursor.execute("""
+        UPDATE customer_sites
+        SET site_name = ?,
+            location = ?,
+            timezone = ?,
+            dc_capacity_kwp = ?,
+            ac_capacity_kw = ?,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE site_id = ? AND customer_id = ?
+    """, (
+        request.site_name.strip(),
+        request.location.strip() if request.location else None,
+        request.timezone,
+        request.dc_capacity_kwp,
+        request.ac_capacity_kw,
+        request.site_id,
+        customer_id,
+    ))
+    conn.commit()
+    conn.close()
+    return {"status": "saved", "customer_id": customer_id, "site_id": request.site_id}
 
 
 def _profile_columns(profile: dict) -> list[str]:

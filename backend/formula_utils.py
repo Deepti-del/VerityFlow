@@ -20,7 +20,8 @@ ALLOWED_AST_NODES = (
 )
 
 
-def _formula_column_names(formula_string: str) -> set[str]:
+def extract_formula_columns(formula_string: str) -> set[str]:
+    """Return column names referenced by a simple arithmetic formula."""
     tree = ast.parse(formula_string, mode="eval")
     return {
         node.id
@@ -81,7 +82,7 @@ def validate_formula(
             ),
         }
 
-    formula_columns = _formula_column_names(formula)
+    formula_columns = extract_formula_columns(formula)
 
     missing_declared_inputs = sorted(declared_inputs - available)
     if missing_declared_inputs:

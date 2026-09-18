@@ -1,20 +1,22 @@
-# ReportGen
+# VerityFlow
 
-ReportGen is an analyst-controlled prototype for generating intelligent solar performance reports from trusted operational data.
+**Trusted evidence. Controlled intelligence.**
 
-The current MVP focuses on a daily solar generation report. It validates an uploaded workbook, maps customer columns, calculates KPIs, runs analyst-approved insight rules, plans answers to customer questions, prepares evidence, and assembles an editable report draft for analyst approval.
+VerityFlow is an evidence-grounded reporting workflow that combines deterministic analytics, approved business context, controlled narrative generation, and analyst review.
+
+The current MVP is demonstrated through daily solar-performance reporting. It validates Excel or BigQuery input, maps customer columns, calculates KPIs, applies analyst-approved rules, prepares evidence, creates reviewable narratives, and assembles a customer-ready report for analyst approval and PDF export.
 
 ## Product Demo
 
-![ReportGen product walkthrough preview](docs/images/reportgen-demo-preview.gif)
+![VerityFlow product walkthrough preview](docs/images/reportgen-demo-preview.gif)
 
-**[Download the full one-minute walkthrough](https://raw.githubusercontent.com/Deepti-del/ReportGen/main/docs/demo/ReportGen-full-demo-condensed.mp4)**
+**[Download the full one-minute walkthrough](https://raw.githubusercontent.com/Deepti-del/VerityFlow/main/docs/demo/ReportGen-full-demo-condensed.mp4)**
 
 The demo follows the complete analyst workflow: upload, deterministic validation, customer mappings, approved formulas, reusable questions and rules, evidence-backed draft generation, chart configuration, narrative editing, and final review.
 
 ## Intended Users
 
-ReportGen is intended for teams that repeatedly create operational performance reports from structured data, especially where customers expect report-specific explanations and client-specific thresholds.
+VerityFlow is intended for teams that repeatedly create operational performance reports from structured data, especially where customers expect report-specific explanations and client-specific thresholds.
 
 Initial target users:
 
@@ -29,7 +31,7 @@ The prototype starts with solar daily generation reporting, but the design is in
 
 ## Product Principle
 
-ReportGen is designed around analyst control:
+VerityFlow is designed around analyst control:
 
 ```text
 Analyst defines and approves.
@@ -82,7 +84,7 @@ flowchart TD
 
 The prototype frontend is planned as a guided analyst workflow rather than a crowded all-in-one dashboard. Each step saves progress, and analysts can return to mapping, formulas, questions, or rules before approving a report draft.
 
-![ReportGen guided workflow mockup](docs/images/reportgen-guided-workflow.png)
+![VerityFlow guided workflow mockup](docs/images/reportgen-guided-workflow.png)
 
 The mockup covers:
 
@@ -161,7 +163,7 @@ Report draft: draft_ready, 3 findings, 3 charts, 1 tables
 ## Project Structure
 
 ```text
-reportgen/
+verityflow/
 ├── backend/
 │   ├── answer_planner.py
 │   ├── calculator.py
@@ -275,7 +277,7 @@ Not built yet:
 
 ## Design Direction
 
-ReportGen is not intended to be "AI automatically generates reports."
+VerityFlow is not intended to be "AI automatically generates reports."
 
 The intended positioning is:
 

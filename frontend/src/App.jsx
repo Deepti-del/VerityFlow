@@ -15,6 +15,7 @@ const fmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 const humanize = (value = "") => value.replaceAll("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const number = (value, suffix = "") => value == null ? "—" : `${fmt.format(value)}${suffix}`;
 const splitMetrics = (value = "") => value.split(",").map((item) => item.trim()).filter(Boolean);
+const initialsFor = (value = "Customer") => value.split(/\s+/).map((part) => part[0]).join("").slice(0, 3).toUpperCase() || "CU";
 
 const palette = ["#0c66e4", "#e05a47", "#36b37e", "#f5a623"];
 const REPORT_THEMES = [
@@ -138,6 +139,33 @@ function Empty({ children }) {
   return <div className="empty">{children}</div>;
 }
 
+function ValidationIssueCard({ issue }) {
+  const severity = issue.severity || "warning";
+  const tone = severity === "critical" ? "danger" : severity === "warning" ? "warn" : "neutral";
+  const examples = Array.isArray(issue.examples) ? issue.examples : [];
+
+  return (
+    <div className={`validation-issue-card ${severity}`}>
+      <div className="validation-issue-head">
+        <Status tone={tone}>{severity === "critical" ? "Needs correction" : "Review"}</Status>
+        <strong>{issue.title || "Data-quality issue"}</strong>
+      </div>
+      {issue.message && <p>{issue.message}</p>}
+      <div className="validation-issue-meta">
+        {issue.location && <span><b>Where:</b> {issue.location}</span>}
+        {Array.isArray(issue.affects) && issue.affects.length > 0 && <span><b>Affects:</b> {issue.affects.join(", ")}</span>}
+        {issue.suggested_action && <span><b>Suggested correction:</b> {issue.suggested_action}</span>}
+      </div>
+      {examples.length > 0 && (
+        <details>
+          <summary>Show example rows</summary>
+          <pre>{JSON.stringify(examples, null, 2)}</pre>
+        </details>
+      )}
+    </div>
+  );
+}
+
 function App() {
   const [step, setStep] = useState(0);
   const [customers, setCustomers] = useState([]);
@@ -151,6 +179,9 @@ function App() {
     customer_name: "",
     parent_company: "",
     customer_reference: "",
+    customer_logo_label: "",
+    company_logo_label: "RG",
+    logo_placement: "both_header",
     site_name: "",
     location: "",
     timezone: "Asia/Kolkata",
@@ -203,6 +234,10 @@ function App() {
   const [brandScope, setBrandScope] = useState("customer_report_type");
   const [customerLogoLabel, setCustomerLogoLabel] = useState("AS");
   const [companyLogoLabel, setCompanyLogoLabel] = useState("RG");
+  const [logoPlacement, setLogoPlacement] = useState("both_header");
+  const [profileEditorOpen, setProfileEditorOpen] = useState(false);
+  const [profileDraft, setProfileDraft] = useState(null);
+  const [pendingProfileOpenCustomerId, setPendingProfileOpenCustomerId] = useState("");
   const [reportTheme, setReportTheme] = useState("corporate_blue");
   const [summaryPosition, setSummaryPosition] = useState("top");
   const [reportLayout, setReportLayout] = useState(null);
@@ -236,14 +271,38 @@ function App() {
     if (!customerId) return;
     api.customerContext(customerId).then((data) => {
       setCustomerContext(data);
+      const contextCustomer = data.customer || {};
+      setPreparedFor(contextCustomer.parent_company || contextCustomer.customer_name || preparedFor);
+      setCustomerLogoLabel(contextCustomer.customer_logo_label || initialsFor(contextCustomer.customer_name));
+      setCompanyLogoLabel(contextCustomer.company_logo_label || "RG");
+      setLogoPlacement(contextCustomer.logo_placement || "both_header");
       const configuration = data.report_configurations?.find((item) => item.report_type === reportType)
         || data.report_configurations?.[0];
       if (configuration) {
         setSelectedConfigId(configuration.config_id);
         setReportType(configuration.report_type);
       }
+      if (pendingProfileOpenCustomerId === customerId) {
+        const primarySite = (data.sites || [])[0] || {};
+        setProfileDraft({
+          customer_name: contextCustomer.customer_name || "",
+          parent_company: contextCustomer.parent_company || "",
+          customer_reference: contextCustomer.customer_reference || "",
+          customer_logo_label: contextCustomer.customer_logo_label || initialsFor(contextCustomer.customer_name),
+          company_logo_label: contextCustomer.company_logo_label || "RG",
+          logo_placement: contextCustomer.logo_placement || "both_header",
+          site_id: primarySite.site_id || "",
+          site_name: primarySite.site_name || "",
+          location: primarySite.location || "",
+          timezone: primarySite.timezone || "Asia/Kolkata",
+          dc_capacity_kwp: primarySite.dc_capacity_kwp ?? "",
+          ac_capacity_kw: primarySite.ac_capacity_kw ?? "",
+        });
+        setProfileEditorOpen(true);
+        setPendingProfileOpenCustomerId("");
+      }
     }).catch((e) => setError(e.message));
-  }, [customerId]);
+  }, [customerId, pendingProfileOpenCustomerId]);
 
   useEffect(() => {
     if (!selectedConfigId) {
@@ -261,8 +320,6 @@ function App() {
         if (identity.reportSubtitle) setReportSubtitle(identity.reportSubtitle);
         if (identity.preparedBy) setPreparedBy(identity.preparedBy);
         if (identity.preparedFor) setPreparedFor(identity.preparedFor);
-        if (identity.customerLogoLabel) setCustomerLogoLabel(identity.customerLogoLabel);
-        if (identity.companyLogoLabel) setCompanyLogoLabel(identity.companyLogoLabel);
       }
     }).catch((e) => setError(e.message));
   }, [selectedConfigId]);
@@ -390,7 +447,10 @@ function App() {
     setCalculation(hydratedResult);
     const savedById = Object.fromEntries(savedComponents.map((item) => [item.componentId, item]));
     setChartReview(Object.fromEntries(components.map((item) => {
-      const metrics = item.series?.map((series) => series.metric).filter(Boolean).join(", ") || item.metric || "";
+      const metrics = item.series?.map((series) => series.metric).filter(Boolean).join(", ")
+        || (item.metrics || []).join(", ")
+        || item.metric
+        || "";
       const saved = savedById[item.component_id] || {};
       return [item.component_id, {
         included: saved.included ?? true,
@@ -613,12 +673,70 @@ function App() {
     await loadProfile();
   }, "Standing question approved and saved.");
 
+  const openCustomerProfile = (event) => {
+    event?.stopPropagation?.();
+    const contextCustomer = customerContext?.customer || customer || {};
+    const primarySite = (customerContext?.sites || [])[0] || {};
+    setProfileDraft({
+      customer_name: contextCustomer.customer_name || "",
+      parent_company: contextCustomer.parent_company || "",
+      customer_reference: contextCustomer.customer_reference || "",
+      customer_logo_label: contextCustomer.customer_logo_label || initialsFor(contextCustomer.customer_name),
+      company_logo_label: contextCustomer.company_logo_label || "RG",
+      logo_placement: contextCustomer.logo_placement || "both_header",
+      site_id: primarySite.site_id || "",
+      site_name: primarySite.site_name || "",
+      location: primarySite.location || "",
+      timezone: primarySite.timezone || "Asia/Kolkata",
+      dc_capacity_kwp: primarySite.dc_capacity_kwp ?? "",
+      ac_capacity_kw: primarySite.ac_capacity_kw ?? "",
+    });
+    setProfileEditorOpen(true);
+  };
+
+  const updateProfileDraft = (changes) => {
+    setProfileDraft((current) => ({ ...current, ...changes }));
+  };
+
+  const saveCustomerProfile = () => run(async () => {
+    if (!customerId || !profileDraft) throw new Error("Choose a customer first.");
+    if (!profileDraft.customer_name.trim() || !profileDraft.site_name.trim()) {
+      throw new Error("Customer name and site name are required.");
+    }
+    await api.updateCustomerProfile(customerId, {
+      ...profileDraft,
+      customer_name: profileDraft.customer_name.trim(),
+      parent_company: profileDraft.parent_company.trim() || null,
+      customer_reference: profileDraft.customer_reference.trim() || null,
+      customer_logo_label: profileDraft.customer_logo_label.trim() || initialsFor(profileDraft.customer_name),
+      company_logo_label: profileDraft.company_logo_label.trim() || "RG",
+      site_name: profileDraft.site_name.trim(),
+      location: profileDraft.location.trim() || null,
+      dc_capacity_kwp: profileDraft.dc_capacity_kwp ? Number(profileDraft.dc_capacity_kwp) : null,
+      ac_capacity_kw: profileDraft.ac_capacity_kw ? Number(profileDraft.ac_capacity_kw) : null,
+    });
+    const [refreshedCustomers, refreshedContext] = await Promise.all([
+      api.customers(),
+      api.customerContext(customerId),
+    ]);
+    setCustomers(refreshedCustomers.customers || []);
+    setCustomerContext(refreshedContext);
+    const savedCustomer = refreshedContext.customer || {};
+    setPreparedFor(savedCustomer.parent_company || savedCustomer.customer_name);
+    setCustomerLogoLabel(savedCustomer.customer_logo_label || initialsFor(savedCustomer.customer_name));
+    setCompanyLogoLabel(savedCustomer.company_logo_label || "RG");
+    setLogoPlacement(savedCustomer.logo_placement || "both_header");
+    setProfileEditorOpen(false);
+  }, "Customer profile and branding saved.");
+
   const selectCustomer = (item) => {
     setCustomerId(item.customer_id);
     setCustomerMode("existing");
     setPreparedFor(item.parent_company || item.customer_name);
-    const initials = item.customer_name.split(/\s+/).map((part) => part[0]).join("").slice(0, 3).toUpperCase();
-    setCustomerLogoLabel(initials || "CU");
+    setCustomerLogoLabel(item.customer_logo_label || initialsFor(item.customer_name));
+    setCompanyLogoLabel(item.company_logo_label || "RG");
+    setLogoPlacement(item.logo_placement || "both_header");
+    setProfileEditorOpen(false);
     setFile(null); setFileId(""); setValidation(null); setCalculation(null);
   };
 
@@ -652,8 +770,9 @@ function App() {
     setReportType(result.report_type);
     setSelectedConfigId(result.config_id);
     setPreparedFor(newCustomer.parent_company.trim() || newCustomer.customer_name.trim());
-    const initials = newCustomer.customer_name.split(/\s+/).map((part) => part[0]).join("").slice(0, 3).toUpperCase();
-    setCustomerLogoLabel(initials || "CU");
+    setCustomerLogoLabel(newCustomer.customer_logo_label || initialsFor(newCustomer.customer_name));
+    setCompanyLogoLabel(newCustomer.company_logo_label || "RG");
+    setLogoPlacement(newCustomer.logo_placement || "both_header");
     setCustomerMode("existing");
     setStep(1);
   }, "Customer, first site, and Daily Generation Report configuration created.");
@@ -688,6 +807,10 @@ function App() {
   const contextLabel = customerMode === "new" && step === 0
     ? "New customer · First report setup"
     : `${customer?.customer_name || "Select customer"} · ${selectedConfiguration?.configuration_name || humanize(reportType)}`;
+  const dataQualityIssues = validation?.summary?.data_quality_issues || [];
+  const validationFallbackMessages = validation
+    ? [...(validation.errors || []), ...(validation.warnings || [])]
+    : [];
 
   return (
     <div className="product-shell">
@@ -726,7 +849,7 @@ function App() {
               <div className="existing-customer-flow">
                 <label className="customer-search">Find customer<div className="search-field"><input value={customerSearch} onChange={(event) => setCustomerSearch(event.target.value)} placeholder="Search by customer, company, or plant…" /><span>⌕</span></div></label>
                 <div className="customer-results">
-                  {filteredCustomers.map((item) => <button key={item.customer_id} className={`customer-result ${customerId === item.customer_id ? "selected" : ""}`} onClick={() => selectCustomer(item)}><span className="customer-building">▥</span><span><strong>{item.customer_name}</strong><small>{item.parent_company ? `Parent company: ${item.parent_company}` : "Independent customer"}</small><em>{item.site_count || 0} site{item.site_count === 1 ? "" : "s"} · {item.configuration_count || 0} active report configuration{item.configuration_count === 1 ? "" : "s"}</em></span><span className="profile-link">View customer profile ↗</span></button>)}
+                  {filteredCustomers.map((item) => <button key={item.customer_id} className={`customer-result ${customerId === item.customer_id ? "selected" : ""}`} onClick={() => selectCustomer(item)}><span className="customer-building">{item.customer_logo_label || initialsFor(item.customer_name)}</span><span><strong>{item.customer_name}</strong><small>{item.parent_company ? `Parent company: ${item.parent_company}` : "Independent customer"}</small><em>{item.site_count || 0} site{item.site_count === 1 ? "" : "s"} · {item.configuration_count || 0} active report configuration{item.configuration_count === 1 ? "" : "s"}</em></span><span className="profile-link" onClick={(event) => { event.stopPropagation(); selectCustomer(item); setPendingProfileOpenCustomerId(item.customer_id); }}>View / edit profile ↗</span></button>)}
                   {!filteredCustomers.length && <Empty>No customer matches this search.</Empty>}
                 </div>
 
@@ -736,14 +859,15 @@ function App() {
                   return <button key={configuration.config_id} className={`configuration-option ${selected ? "selected" : ""}`} onClick={() => chooseConfiguration(configuration)}><span className="choice-radio" /><span><small>Site</small><strong>{configuration.site_name}</strong></span><span><small>Report</small><strong>{configuration.configuration_name}</strong></span><span><small>Frequency</small><strong>{humanize(configuration.reporting_period)}</strong></span><Status tone={pending ? "warn" : "success"}>{pending ? "Setup required" : "Ready"}</Status><span className="memory-count">{mappingProfile?.confirmed_count || 0} mappings · {formulaProfile?.approved_count || 0} formulas · {(profile?.customer_questions || []).filter((item) => item.approved_by_analyst).length} questions · {(profile?.insight_rules || []).filter((item) => item.approved_by_analyst).length} rules</span></button>;
                 })}{!customerContext?.report_configurations?.length && <div className="empty-configuration">No report configuration exists for this customer yet.</div>}
                   <button className="create-configuration" onClick={() => setNotice("Additional report configurations will follow the Daily Generation MVP.")}>＋ <span>Create another report configuration</span></button>
-                  <div className="context-actions"><button onClick={() => setNotice("Additional site setup will follow the Daily Generation MVP.")}>＋ Add new site</button><button onClick={() => setNotice("Customer profile editing is the next profile-management increment.")}>✎ Edit customer profile</button></div>
+                  <div className="context-actions"><button onClick={() => setNotice("Additional site setup will follow the Daily Generation MVP.")}>＋ Add new site</button><button onClick={openCustomerProfile}>✎ Edit customer profile</button></div>
                 </div>}
+                {profileEditorOpen && profileDraft && <article className="card customer-profile-editor"><div className="card-title-row"><div><h3>Customer profile memory</h3><p>Changes saved here become the default context and branding for this customer.</p></div><button className="close-editor" onClick={() => setProfileEditorOpen(false)}>×</button></div><div className="setup-form-grid three"><label>Customer name*<input value={profileDraft.customer_name} onChange={(event) => updateProfileDraft({ customer_name: event.target.value })} /></label><label>Parent company<input value={profileDraft.parent_company} onChange={(event) => updateProfileDraft({ parent_company: event.target.value })} /></label><label>Customer reference<input value={profileDraft.customer_reference} onChange={(event) => updateProfileDraft({ customer_reference: event.target.value })} /></label><label>Site name*<input value={profileDraft.site_name} onChange={(event) => updateProfileDraft({ site_name: event.target.value })} /></label><label>Location<input value={profileDraft.location} onChange={(event) => updateProfileDraft({ location: event.target.value })} /></label><label>Timezone<select value={profileDraft.timezone} onChange={(event) => updateProfileDraft({ timezone: event.target.value })}><option value="Asia/Kolkata">Asia/Kolkata (IST)</option><option value="UTC">UTC</option></select></label><label>DC capacity (kWp)<input type="number" min="0" value={profileDraft.dc_capacity_kwp} onChange={(event) => updateProfileDraft({ dc_capacity_kwp: event.target.value })} /></label><label>AC capacity (kW)<input type="number" min="0" value={profileDraft.ac_capacity_kw} onChange={(event) => updateProfileDraft({ ac_capacity_kw: event.target.value })} /></label><label>Logo placement<select value={profileDraft.logo_placement} onChange={(event) => updateProfileDraft({ logo_placement: event.target.value })}><option value="both_header">Both logos in header</option><option value="customer_header_company_footer">Customer header / Company footer</option><option value="company_header_customer_footer">Company header / Customer footer</option><option value="both_footer">Both logos in footer</option><option value="customer_only_header">Customer logo only</option><option value="company_only_header">Company logo only</option></select></label><label>Customer logo label<input maxLength="12" value={profileDraft.customer_logo_label} onChange={(event) => updateProfileDraft({ customer_logo_label: event.target.value.toUpperCase() })} /></label><label>Company logo label<input maxLength="12" value={profileDraft.company_logo_label} onChange={(event) => updateProfileDraft({ company_logo_label: event.target.value.toUpperCase() })} /></label></div><div className="logo-placement-preview"><span className="preview-logo customer">{profileDraft.customer_logo_label || "CU"}</span><span>{humanize(profileDraft.logo_placement)}</span><span className="preview-logo company">{profileDraft.company_logo_label || "RG"}</span></div><div className="actions"><Button secondary onClick={() => setProfileEditorOpen(false)}>Cancel</Button><Button disabled={busy} onClick={saveCustomerProfile}>Save customer profile</Button></div></article>}
               </div>
             ) : (
               <article className="card new-customer-form">
-                <section><div className="form-section-title"><span>1</span><h3>Customer details</h3><button type="button" onClick={() => setNotice("Logo upload will be available from the saved customer profile.")}>↥ Upload customer logo (optional)</button></div><div className="setup-form-grid three"><label>Customer name*<input value={newCustomer.customer_name} onChange={(event) => updateNewCustomer({ customer_name: event.target.value })} placeholder="e.g. Alpha Solar Operations" /></label><label>Parent company<input value={newCustomer.parent_company} onChange={(event) => updateNewCustomer({ parent_company: event.target.value })} placeholder="Optional" /></label><label>Customer reference<input value={newCustomer.customer_reference} onChange={(event) => updateNewCustomer({ customer_reference: event.target.value })} placeholder="Optional internal ID" /></label></div></section>
+                <section><div className="form-section-title"><span>1</span><h3>Customer details</h3><button type="button" onClick={() => setNotice("Image upload will be added when hosted storage is ready. Use logo labels for the MVP.")}>↥ Upload logo later</button></div><div className="setup-form-grid three"><label>Customer name*<input value={newCustomer.customer_name} onChange={(event) => updateNewCustomer({ customer_name: event.target.value, customer_logo_label: newCustomer.customer_logo_label || initialsFor(event.target.value) })} placeholder="e.g. Alpha Solar Operations" /></label><label>Parent company<input value={newCustomer.parent_company} onChange={(event) => updateNewCustomer({ parent_company: event.target.value })} placeholder="Optional" /></label><label>Customer reference<input value={newCustomer.customer_reference} onChange={(event) => updateNewCustomer({ customer_reference: event.target.value })} placeholder="Optional internal ID" /></label><label>Customer logo label<input maxLength="12" value={newCustomer.customer_logo_label} onChange={(event) => updateNewCustomer({ customer_logo_label: event.target.value.toUpperCase() })} placeholder="e.g. AS" /></label><label>Company logo label<input maxLength="12" value={newCustomer.company_logo_label} onChange={(event) => updateNewCustomer({ company_logo_label: event.target.value.toUpperCase() })} placeholder="e.g. RG" /></label><label>Logo placement<select value={newCustomer.logo_placement} onChange={(event) => updateNewCustomer({ logo_placement: event.target.value })}><option value="both_header">Both logos in header</option><option value="customer_header_company_footer">Customer header / Company footer</option><option value="company_header_customer_footer">Company header / Customer footer</option><option value="both_footer">Both logos in footer</option><option value="customer_only_header">Customer logo only</option><option value="company_only_header">Company logo only</option></select></label></div></section>
                 <section><div className="form-section-title"><span>2</span><h3>First plant or site</h3></div><div className="setup-form-grid three"><label>Site name*<input value={newCustomer.site_name} onChange={(event) => updateNewCustomer({ site_name: event.target.value })} placeholder="e.g. Alpha Solar Power Plant" /></label><label>Location<input value={newCustomer.location} onChange={(event) => updateNewCustomer({ location: event.target.value })} placeholder="City, region, country" /></label><label>Timezone*<select value={newCustomer.timezone} onChange={(event) => updateNewCustomer({ timezone: event.target.value })}><option value="Asia/Kolkata">Asia/Kolkata (IST)</option><option value="UTC">UTC</option></select></label><label>DC capacity (kWp)<input type="number" min="0" value={newCustomer.dc_capacity_kwp} onChange={(event) => updateNewCustomer({ dc_capacity_kwp: event.target.value })} placeholder="Required for capacity-based KPIs" /></label><label>AC capacity (kW)<input type="number" min="0" value={newCustomer.ac_capacity_kw} onChange={(event) => updateNewCustomer({ ac_capacity_kw: event.target.value })} placeholder="Optional for initial setup" /></label></div><p className="section-helper">Additional equipment and source details can be completed before calculation.</p></section>
-                <section><div className="form-section-title"><span>3</span><h3>First report configuration</h3></div><div className="setup-form-grid three"><label>Report type*<select value={newCustomer.report_type} disabled><option value="daily_generation">Solar Performance Report</option></select></label><label>Reporting period*<select value={newCustomer.reporting_period} disabled><option value="daily">Daily</option></select></label><label>Configuration name<input value={newCustomer.configuration_name} onChange={(event) => updateNewCustomer({ configuration_name: event.target.value })} /></label></div><div className="setup-callout">ⓘ Mappings, formulas, questions, rules, and report components will be configured and approved in the next steps.</div></section>
+                <section><div className="form-section-title"><span>3</span><h3>First report configuration</h3></div><div className="setup-form-grid three"><label>Report type*<div className="locked-field"><strong>Solar Performance Report</strong><small>Only report pack available in this MVP</small></div></label><label>Reporting period*<div className="locked-field"><strong>Daily</strong><small>Daily generation is the current supported period</small></div></label><label>Configuration name<input value={newCustomer.configuration_name} onChange={(event) => updateNewCustomer({ configuration_name: event.target.value })} /></label></div><div className="setup-callout">ⓘ Mappings, formulas, questions, rules, and report components will be configured and approved in the next steps. More report types can be added later as report packs.</div></section>
               </article>
             )}
           </section>
@@ -846,7 +970,22 @@ function App() {
           <section>
             <article className="card section-head"><div><h2>Data validation</h2><p>Check structure, data types, completeness, duplicates, and mapping coverage before calculation.</p>{!fileId && <p className="validation-helper">No data source connected yet. Go back to Upload, choose Excel or BigQuery, then connect the source.</p>}</div><Button disabled={busy || !fileId} onClick={validateWorkbook}>{busy ? "Checking…" : fileId ? "Run validation" : "Connect source first"}</Button></article>
             {!validation ? <Empty>{fileId ? "Data source connected. Run deterministic validation." : "Connect a data source before running validation."}</Empty> : <div className="panel-grid three summary-cards"><article className="card"><span>Result</span><strong className={validation.valid ? "good" : "bad"}>{validation.valid ? "Passed" : "Needs attention"}</strong></article><article className="card"><span>Errors</span><strong>{validation.errors.length}</strong></article><article className="card"><span>Warnings</span><strong>{validation.warnings.length}</strong></article></div>}
-            {validation && <article className="card"><h3>Validation detail</h3>{[...validation.errors, ...validation.warnings].length === 0 ? <p className="checkline">✓ No blocking data-quality issues were found.</p> : [...validation.errors, ...validation.warnings].map((item, index) => <p className="issue" key={index}>{typeof item === "string" ? item : JSON.stringify(item)}</p>)}<div className="actions"><Button secondary onClick={() => setStep(3)}>Review mappings & formulas</Button></div></article>}
+            {validation && (
+              <article className="card">
+                <h3>Data-quality guidance</h3>
+                {dataQualityIssues.length === 0 && validationFallbackMessages.length === 0 ? (
+                  <p className="checkline">✓ No blocking data-quality issues were found.</p>
+                ) : dataQualityIssues.length > 0 ? (
+                  <div className="validation-issue-list">
+                    {dataQualityIssues.map((issue, index) => <ValidationIssueCard issue={issue} key={`${issue.title || "issue"}-${index}`} />)}
+                  </div>
+                ) : (
+                  validationFallbackMessages.map((item, index) => <p className="issue" key={index}>{typeof item === "string" ? item : JSON.stringify(item)}</p>)
+                )}
+                <div className="validation-note">ReportGen does not repair source data. It flags issues that may affect calculations, charts, narratives, or analyst approval so the source can be corrected upstream.</div>
+                <div className="actions"><Button secondary onClick={() => setStep(3)}>Review mappings & formulas</Button></div>
+              </article>
+            )}
           </section>
         )}
 
@@ -876,7 +1015,7 @@ function App() {
               reportDate={reportDate}
               reportType={reportType}
               configId={selectedConfigId}
-              reportIdentity={{ reportTitle, reportSubtitle, preparedBy, preparedFor, customerLogoLabel, companyLogoLabel, brandScope }}
+              reportIdentity={{ reportTitle, reportSubtitle, preparedBy, preparedFor, customerLogoLabel, companyLogoLabel, logoPlacement, brandScope }}
               reportTheme={reportTheme}
               setReportTheme={setReportTheme}
               summaryPosition={summaryPosition}
