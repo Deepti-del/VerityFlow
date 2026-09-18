@@ -8,6 +8,13 @@ The current MVP is demonstrated through recurring solar-performance reporting. I
 
 The product originated from recurring problems encountered while working with renewable-energy data: validating operational inputs, applying customer-specific definitions, answering the same reporting questions, and explaining the evidence behind each conclusion. Solar reporting is the first proving ground; the workflow is intended to extend to other evidence-sensitive reporting domains.
 
+## Architecture
+
+VerityFlow separates deterministic calculation, approved-context retrieval, controlled narrative generation, human review, and report publication so that every published conclusion remains traceable to evidence and an approval decision.
+
+- **[View the architecture PDF](docs/architecture/verityflow-evidence-grounded-architecture.pdf)**
+- **[Open the editable architecture in FigJam](https://www.figma.com/board/ph60CQzzIuhz1KUrWWY49R/VERITYFLOW?node-id=0-1&t=xVIQ6tMTy98dgxif-1)**
+
 ## Product Demo
 
 ![VerityFlow product walkthrough preview](docs/images/reportgen-demo-preview.gif)
