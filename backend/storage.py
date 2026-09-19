@@ -53,7 +53,7 @@ def save_upload(file_bytes: bytes, filename: str) -> str:
 
 def register_existing_workbook(path: str, filename: str | None = None) -> str:
     """
-    Registers an existing report-ready workbook as a ReportGen source file.
+    Registers an existing report-ready workbook as a VerityFlow source file.
 
     BigQuery and future connectors can materialize clean, report-ready data into
     the same workbook package that the Excel upload path already uses. This

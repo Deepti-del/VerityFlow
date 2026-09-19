@@ -19,7 +19,9 @@ VerityFlow separates deterministic calculation, approved-context retrieval, cont
 
 ![VerityFlow product walkthrough preview](docs/images/reportgen-demo-preview.gif)
 
-**[Download the current product walkthrough](https://raw.githubusercontent.com/Deepti-del/VerityFlow/main/docs/demo/ReportGen-full-demo-condensed.mp4)**
+**[Download the earlier ReportGen prototype walkthrough](https://raw.githubusercontent.com/Deepti-del/VerityFlow/main/docs/demo/ReportGen-full-demo-condensed.mp4)**
+
+A new VerityFlow demonstration showing governed Moss retrieval and evidence provenance is being prepared for the hackathon submission.
 
 ## Product Principle
 
@@ -279,20 +281,22 @@ source .venv/bin/activate
 pip install -r backend/requirements.txt
 python backend/database.py
 python backend/mapper.py
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+uvicorn backend.main:app --reload --host 127.0.0.1 --port 8001
 ```
 
-API documentation is available at `http://127.0.0.1:8000/docs`.
+API documentation is available at `http://127.0.0.1:8001/docs`.
 
 ### Frontend
 
 ```bash
 cd frontend
 npm install
-npm run dev -- --host 127.0.0.1 --port 5173
+npm run dev
 ```
 
-Open `http://127.0.0.1:5173/`.
+Open `http://127.0.0.1:5174/`.
+
+These ports are intentionally separate from the original ReportGen prototype (`5173`/`8000`) so both applications can run independently.
 
 Set `VITE_API_URL` when the backend is hosted at a different address.
 

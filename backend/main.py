@@ -606,7 +606,7 @@ def create_customer(request: CreateCustomerRequest):
             request.parent_company.strip() if request.parent_company else None,
             request.customer_reference.strip() if request.customer_reference else None,
             (request.customer_logo_label or _slug(request.customer_name).replace("_", " ")[:2]).strip().upper(),
-            (request.company_logo_label or "RG").strip().upper(),
+            (request.company_logo_label or "VF").strip().upper(),
             request.logo_placement,
             "pending_first_approval",
         ))
@@ -685,7 +685,7 @@ def update_customer_profile(customer_id: str, request: UpdateCustomerProfileRequ
         request.parent_company.strip() if request.parent_company else None,
         request.customer_reference.strip() if request.customer_reference else None,
         (request.customer_logo_label or "").strip().upper() or None,
-        (request.company_logo_label or "RG").strip().upper(),
+        (request.company_logo_label or "VF").strip().upper(),
         request.logo_placement,
         customer_id,
     ))

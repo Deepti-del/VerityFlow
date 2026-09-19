@@ -46,10 +46,10 @@ def connect_bigquery_source(
     use_demo_data: bool = False,
 ) -> dict:
     """
-    Materializes clean BigQuery views into ReportGen's existing workbook package.
+    Materializes clean BigQuery views into VerityFlow's existing workbook package.
 
     BigQuery remains the input source. Joins/transforms should happen upstream in
-    BigQuery views. ReportGen reads those clean views and then runs the existing
+    BigQuery views. VerityFlow reads those clean views and then runs the existing
     validation, mapping, deterministic calculation, chart, and review pipeline.
     """
     table_map = table_map or {}
@@ -61,15 +61,15 @@ def connect_bigquery_source(
     if use_demo_data or project_id.lower() in {"demo", "local_demo"}:
         file_id = register_existing_workbook(
             _demo_workbook_path(),
-            "BigQuery_Demo_Alpha_Solar_ReportGen.xlsx",
+            "BigQuery_Demo_Alpha_Solar_VerityFlow.xlsx",
         )
         return {
             "file_id": file_id,
-            "filename": "BigQuery_Demo_Alpha_Solar_ReportGen.xlsx",
+            "filename": "BigQuery_Demo_Alpha_Solar_VerityFlow.xlsx",
             "source_type": "bigquery",
             "mode": "demo",
             "message": (
-                "Demo BigQuery source connected. ReportGen is using the same "
+                "Demo BigQuery source connected. VerityFlow is using the same "
                 "report-ready tables it would read from approved BigQuery views."
             ),
             "views": resolved_views,
@@ -108,13 +108,13 @@ def connect_bigquery_source(
 
     file_id = save_workbook_from_frames(
         frames,
-        f"BigQuery_{dataset_id}_ReportGen.xlsx",
+        f"BigQuery_{dataset_id}_VerityFlow.xlsx",
     )
     return {
         "file_id": file_id,
-        "filename": f"BigQuery_{dataset_id}_ReportGen.xlsx",
+        "filename": f"BigQuery_{dataset_id}_VerityFlow.xlsx",
         "source_type": "bigquery",
         "mode": "bigquery",
-        "message": "BigQuery source connected and materialized into a ReportGen-ready package.",
+        "message": "BigQuery source connected and materialized into a VerityFlow-ready package.",
         "views": resolved_views,
     }

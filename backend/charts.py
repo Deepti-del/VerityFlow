@@ -1180,7 +1180,7 @@ def build_report_component(
             chart_type,
             analyst_reason=(
                 f"{_chart_purpose(chart_type)} This request cannot be generated "
-                "for the selected period because ReportGen did not find approved "
+                "for the selected period because VerityFlow did not find approved "
                 "data in that date range."
                 + available
             ),
@@ -1198,7 +1198,7 @@ def build_report_component(
                     "This waterfall chart cannot be generated from the selected KPIs. "
                     "A waterfall chart explains how a starting value changes through "
                     "a series of positive or negative additions/subtractions to reach "
-                    "a final ending total. For a generation-loss waterfall, ReportGen "
+                    "a final ending total. For a generation-loss waterfall, VerityFlow "
                     "needs the starting expected generation, the loss components, and "
                     "the ending actual generation. The selected approved data does not "
                     f"include: {', '.join(humanize_metric(metric) for metric in missing)}. "
@@ -1241,7 +1241,7 @@ def build_report_component(
             chart_type,
             analyst_reason=(
                 f"{_chart_purpose(chart_type)} Choose 'By inverter' or 'By block' "
-                "instead of site total so ReportGen knows what rows to compare."
+                "instead of site total so VerityFlow knows what rows to compare."
             ),
             developer_reason="heatmap requested with site_total breakdown",
             available_metrics=list(df.columns),
@@ -1272,7 +1272,7 @@ def build_report_component(
             chart_type,
             analyst_reason=(
                 f"{_chart_purpose(chart_type)} "
-                "For the current ReportGen waterfall, use the site-total breakdown so "
+                "For the current VerityFlow waterfall, use the site-total breakdown so "
                 "the generation bridge can be calculated consistently."
             ),
             developer_reason="waterfall requested with non-site-total breakdown",
@@ -1328,7 +1328,7 @@ def build_report_component(
                 chart_type,
                 analyst_reason=(
                     "This waterfall chart cannot be generated from the selected KPIs. "
-                    f"{_chart_purpose(chart_type)} For a generation-loss waterfall, ReportGen "
+                    f"{_chart_purpose(chart_type)} For a generation-loss waterfall, VerityFlow "
                     "needs the starting expected generation, the loss components, and "
                     "the ending actual generation. The selected approved data does not "
                     f"include: {', '.join(humanize_metric(metric) for metric in missing_columns)}. "

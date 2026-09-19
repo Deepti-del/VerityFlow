@@ -135,7 +135,7 @@ class CreateCustomerRequest(BaseModel):
     parent_company: str | None = Field(default=None, max_length=120)
     customer_reference: str | None = Field(default=None, max_length=80)
     customer_logo_label: str | None = Field(default=None, max_length=12)
-    company_logo_label: str | None = Field(default="RG", max_length=12)
+    company_logo_label: str | None = Field(default="VF", max_length=12)
     logo_placement: LogoPlacement = "both_header"
     site_name: str = Field(min_length=2, max_length=120)
     location: str | None = Field(default=None, max_length=160)
@@ -156,7 +156,7 @@ class UpdateCustomerProfileRequest(BaseModel):
     parent_company: str | None = Field(default=None, max_length=120)
     customer_reference: str | None = Field(default=None, max_length=80)
     customer_logo_label: str | None = Field(default=None, max_length=12)
-    company_logo_label: str | None = Field(default="RG", max_length=12)
+    company_logo_label: str | None = Field(default="VF", max_length=12)
     logo_placement: LogoPlacement = "both_header"
     site_id: str
     site_name: str = Field(min_length=2, max_length=120)

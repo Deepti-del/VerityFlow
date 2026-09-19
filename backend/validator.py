@@ -135,7 +135,7 @@ def _validate_date_column(
             severity="critical",
             title="Date column is missing",
             message=(
-                f"ReportGen could not find the {_metric_label(column)} column needed "
+                f"VerityFlow could not find the {_metric_label(column)} column needed "
                 "to select the reporting period."
             ),
             location=f"{sheet_name}.{column}",
@@ -163,7 +163,7 @@ def _validate_date_column(
             severity="critical",
             title="Invalid report dates",
             message=(
-                f"{invalid_count} row(s) contain a date value ReportGen cannot read. "
+                f"{invalid_count} row(s) contain a date value VerityFlow cannot read. "
                 "Those rows cannot be safely assigned to a reporting period."
             ),
             location=f"{sheet_name}.{column}",
@@ -194,7 +194,7 @@ def _validate_date_column(
             ),
             location=f"{sheet_name}.{column}",
             affected_columns=[column],
-            suggested_action="Sort the source data by date before sending it to ReportGen.",
+            suggested_action="Sort the source data by date before sending it to VerityFlow.",
         )
         warnings.append(_issue_text(issue))
         issues.append(issue)
@@ -236,7 +236,7 @@ def _validate_numeric_columns(
                 title=f"{_metric_label(column)} has non-numeric values",
                 message=(
                     f"{invalid_count} value(s) in {_metric_label(column)} are not numeric, "
-                    "so ReportGen cannot use them safely in approved formulas or charts."
+                    "so VerityFlow cannot use them safely in approved formulas or charts."
                 ),
                 location=f"{sheet_name}.{column}",
                 affected_columns=[column],
@@ -254,7 +254,7 @@ def _validate_numeric_columns(
                 title=f"{_metric_label(column)} has blank values",
                 message=(
                     f"{missing_count} row(s) have no value for {_metric_label(column)}. "
-                    "ReportGen will not fill these values automatically."
+                    "VerityFlow will not fill these values automatically."
                 ),
                 location=f"{sheet_name}.{column}",
                 affected_columns=[column],
@@ -381,7 +381,7 @@ def _validate_daily_timeseries(df: pd.DataFrame, sheet_name: str = "daily_timese
             severity="warning",
             title="Interval timestamp is missing",
             message=(
-                "The daily_timeseries sheet has no timestamp column, so ReportGen "
+                "The daily_timeseries sheet has no timestamp column, so VerityFlow "
                 "cannot create hourly, 15-minute, or source-interval charts."
             ),
             location=f"{sheet_name}.timestamp",
@@ -400,7 +400,7 @@ def _validate_daily_timeseries(df: pd.DataFrame, sheet_name: str = "daily_timese
             title="Invalid interval timestamps",
             message=(
                 f"{int(invalid_mask.sum())} interval row(s) have timestamps that "
-                "ReportGen cannot read."
+                "VerityFlow cannot read."
             ),
             location=f"{sheet_name}.timestamp",
             affected_columns=["timestamp"],
@@ -439,7 +439,7 @@ def _validate_daily_timeseries(df: pd.DataFrame, sheet_name: str = "daily_timese
                 severity="warning",
                 title="Missing interval gap detected",
                 message=(
-                    f"ReportGen detected {int(gap_mask.sum())} timestamp gap(s) larger "
+                    f"VerityFlow detected {int(gap_mask.sum())} timestamp gap(s) larger "
                     f"than the expected ~{expected_minutes:.0f}-minute interval. "
                     "This can affect interval charts and any KPI derived from telemetry."
                 ),
@@ -580,7 +580,7 @@ def validate_daily_kpis_sheet(
             severity="critical",
             title="Daily KPI sheet is empty",
             message=(
-                "The daily_kpis sheet has no rows, so ReportGen has no report-ready "
+                "The daily_kpis sheet has no rows, so VerityFlow has no report-ready "
                 "daily data to validate or calculate."
             ),
             location=DAILY_KPIS_SHEET,
@@ -594,7 +594,7 @@ def validate_daily_kpis_sheet(
             severity="critical",
             title="Column mappings need analyst approval",
             message=(
-                "ReportGen found source data, but the customer column mappings have "
+                "VerityFlow found source data, but the customer column mappings have "
                 "not been confirmed yet. KPI formulas should not run until the analyst "
                 "confirms which source columns map to approved standard metrics."
             ),
@@ -614,7 +614,7 @@ def validate_daily_kpis_sheet(
             severity="critical",
             title="Required KPI inputs are missing",
             message=(
-                "ReportGen could not find these required mapped inputs: "
+                "VerityFlow could not find these required mapped inputs: "
                 + ", ".join(_metric_label(column) for column in missing_required)
                 + ". Approved KPI formulas may be incomplete without them."
             ),
@@ -721,7 +721,7 @@ def validate_workbook(
             severity="critical",
             title="Connected data source was not found",
             message=(
-                "ReportGen could not find the uploaded workbook or generated source file "
+                "VerityFlow could not find the uploaded workbook or generated source file "
                 "for this validation run."
             ),
             location=excel_path,
@@ -742,7 +742,7 @@ def validate_workbook(
             severity="critical",
             title="Data source could not be opened",
             message=(
-                "ReportGen could not open this workbook/source extract. It may be "
+                "VerityFlow could not open this workbook/source extract. It may be "
                 "corrupt, password-protected, or not in a readable Excel format."
             ),
             location=excel_path,
@@ -769,7 +769,7 @@ def validate_workbook(
             severity="critical",
             title="Required report data sheet is missing",
             message=(
-                "ReportGen cannot validate or calculate the report because these "
+                "VerityFlow cannot validate or calculate the report because these "
                 "required clean data sheets/views are missing: "
                 + ", ".join(missing_sheets)
                 + "."

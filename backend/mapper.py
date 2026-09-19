@@ -19,7 +19,7 @@ def standard_solar_mapping_suggestions(
     report_type: str = "daily_generation",
 ) -> list[dict]:
     """
-    Returns ReportGen's standard solar metric mapping candidates.
+    Returns VerityFlow's standard solar metric mapping candidates.
 
     These are not analyst-approved mappings. They are the product's known
     daily-generation schema shown so a new customer never starts from a blank

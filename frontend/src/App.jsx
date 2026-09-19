@@ -180,7 +180,7 @@ function App() {
     parent_company: "",
     customer_reference: "",
     customer_logo_label: "",
-    company_logo_label: "RG",
+    company_logo_label: "VF",
     logo_placement: "both_header",
     site_name: "",
     location: "",
@@ -233,7 +233,7 @@ function App() {
   const [preparedFor, setPreparedFor] = useState("Alpha Solar Operations");
   const [brandScope, setBrandScope] = useState("customer_report_type");
   const [customerLogoLabel, setCustomerLogoLabel] = useState("AS");
-  const [companyLogoLabel, setCompanyLogoLabel] = useState("RG");
+  const [companyLogoLabel, setCompanyLogoLabel] = useState("VF");
   const [logoPlacement, setLogoPlacement] = useState("both_header");
   const [profileEditorOpen, setProfileEditorOpen] = useState(false);
   const [profileDraft, setProfileDraft] = useState(null);
@@ -274,7 +274,7 @@ function App() {
       const contextCustomer = data.customer || {};
       setPreparedFor(contextCustomer.parent_company || contextCustomer.customer_name || preparedFor);
       setCustomerLogoLabel(contextCustomer.customer_logo_label || initialsFor(contextCustomer.customer_name));
-      setCompanyLogoLabel(contextCustomer.company_logo_label || "RG");
+      setCompanyLogoLabel(contextCustomer.company_logo_label || "VF");
       setLogoPlacement(contextCustomer.logo_placement || "both_header");
       const configuration = data.report_configurations?.find((item) => item.report_type === reportType)
         || data.report_configurations?.[0];
@@ -289,7 +289,7 @@ function App() {
           parent_company: contextCustomer.parent_company || "",
           customer_reference: contextCustomer.customer_reference || "",
           customer_logo_label: contextCustomer.customer_logo_label || initialsFor(contextCustomer.customer_name),
-          company_logo_label: contextCustomer.company_logo_label || "RG",
+          company_logo_label: contextCustomer.company_logo_label || "VF",
           logo_placement: contextCustomer.logo_placement || "both_header",
           site_id: primarySite.site_id || "",
           site_name: primarySite.site_name || "",
@@ -682,7 +682,7 @@ function App() {
       parent_company: contextCustomer.parent_company || "",
       customer_reference: contextCustomer.customer_reference || "",
       customer_logo_label: contextCustomer.customer_logo_label || initialsFor(contextCustomer.customer_name),
-      company_logo_label: contextCustomer.company_logo_label || "RG",
+      company_logo_label: contextCustomer.company_logo_label || "VF",
       logo_placement: contextCustomer.logo_placement || "both_header",
       site_id: primarySite.site_id || "",
       site_name: primarySite.site_name || "",
@@ -709,7 +709,7 @@ function App() {
       parent_company: profileDraft.parent_company.trim() || null,
       customer_reference: profileDraft.customer_reference.trim() || null,
       customer_logo_label: profileDraft.customer_logo_label.trim() || initialsFor(profileDraft.customer_name),
-      company_logo_label: profileDraft.company_logo_label.trim() || "RG",
+      company_logo_label: profileDraft.company_logo_label.trim() || "VF",
       site_name: profileDraft.site_name.trim(),
       location: profileDraft.location.trim() || null,
       dc_capacity_kwp: profileDraft.dc_capacity_kwp ? Number(profileDraft.dc_capacity_kwp) : null,
@@ -724,7 +724,7 @@ function App() {
     const savedCustomer = refreshedContext.customer || {};
     setPreparedFor(savedCustomer.parent_company || savedCustomer.customer_name);
     setCustomerLogoLabel(savedCustomer.customer_logo_label || initialsFor(savedCustomer.customer_name));
-    setCompanyLogoLabel(savedCustomer.company_logo_label || "RG");
+    setCompanyLogoLabel(savedCustomer.company_logo_label || "VF");
     setLogoPlacement(savedCustomer.logo_placement || "both_header");
     setProfileEditorOpen(false);
   }, "Customer profile and branding saved.");
@@ -734,7 +734,7 @@ function App() {
     setCustomerMode("existing");
     setPreparedFor(item.parent_company || item.customer_name);
     setCustomerLogoLabel(item.customer_logo_label || initialsFor(item.customer_name));
-    setCompanyLogoLabel(item.company_logo_label || "RG");
+    setCompanyLogoLabel(item.company_logo_label || "VF");
     setLogoPlacement(item.logo_placement || "both_header");
     setProfileEditorOpen(false);
     setFile(null); setFileId(""); setValidation(null); setCalculation(null);
@@ -771,7 +771,7 @@ function App() {
     setSelectedConfigId(result.config_id);
     setPreparedFor(newCustomer.parent_company.trim() || newCustomer.customer_name.trim());
     setCustomerLogoLabel(newCustomer.customer_logo_label || initialsFor(newCustomer.customer_name));
-    setCompanyLogoLabel(newCustomer.company_logo_label || "RG");
+    setCompanyLogoLabel(newCustomer.company_logo_label || "VF");
     setLogoPlacement(newCustomer.logo_placement || "both_header");
     setCustomerMode("existing");
     setStep(1);
@@ -815,12 +815,12 @@ function App() {
   return (
     <div className="product-shell">
       <header className="product-header">
-        <div className="product-brand"><span className="product-logo">▥</span><strong>ReportGen</strong></div>
+        <div className="product-brand"><span className="product-logo">▥</span><strong>VerityFlow</strong></div>
         <div className="analyst-menu"><button aria-label="Help">?</button><span className="avatar">DP</span><span><strong>Deepti</strong><small>Analyst</small></span><b>⌄</b></div>
       </header>
       <div className="app-shell">
       <aside className="sidebar">
-        <div className="brand"><span className="brand-mark">RG</span><div><strong>ReportGen</strong><small>Analyst workspace</small></div></div>
+        <div className="brand"><span className="brand-mark">VF</span><div><strong>VerityFlow</strong><small>Evidence workspace</small></div></div>
         <nav aria-label="Workflow steps">
           {STEPS.map(([title, subtitle], index) => (
             <button key={title} className={`step ${step === index ? "active" : ""} ${step > index ? "done" : ""}`} onClick={() => setStep(index)}>
@@ -861,11 +861,11 @@ function App() {
                   <button className="create-configuration" onClick={() => setNotice("Additional report configurations will follow the Daily Generation MVP.")}>＋ <span>Create another report configuration</span></button>
                   <div className="context-actions"><button onClick={() => setNotice("Additional site setup will follow the Daily Generation MVP.")}>＋ Add new site</button><button onClick={openCustomerProfile}>✎ Edit customer profile</button></div>
                 </div>}
-                {profileEditorOpen && profileDraft && <article className="card customer-profile-editor"><div className="card-title-row"><div><h3>Customer profile memory</h3><p>Changes saved here become the default context and branding for this customer.</p></div><button className="close-editor" onClick={() => setProfileEditorOpen(false)}>×</button></div><div className="setup-form-grid three"><label>Customer name*<input value={profileDraft.customer_name} onChange={(event) => updateProfileDraft({ customer_name: event.target.value })} /></label><label>Parent company<input value={profileDraft.parent_company} onChange={(event) => updateProfileDraft({ parent_company: event.target.value })} /></label><label>Customer reference<input value={profileDraft.customer_reference} onChange={(event) => updateProfileDraft({ customer_reference: event.target.value })} /></label><label>Site name*<input value={profileDraft.site_name} onChange={(event) => updateProfileDraft({ site_name: event.target.value })} /></label><label>Location<input value={profileDraft.location} onChange={(event) => updateProfileDraft({ location: event.target.value })} /></label><label>Timezone<select value={profileDraft.timezone} onChange={(event) => updateProfileDraft({ timezone: event.target.value })}><option value="Asia/Kolkata">Asia/Kolkata (IST)</option><option value="UTC">UTC</option></select></label><label>DC capacity (kWp)<input type="number" min="0" value={profileDraft.dc_capacity_kwp} onChange={(event) => updateProfileDraft({ dc_capacity_kwp: event.target.value })} /></label><label>AC capacity (kW)<input type="number" min="0" value={profileDraft.ac_capacity_kw} onChange={(event) => updateProfileDraft({ ac_capacity_kw: event.target.value })} /></label><label>Logo placement<select value={profileDraft.logo_placement} onChange={(event) => updateProfileDraft({ logo_placement: event.target.value })}><option value="both_header">Both logos in header</option><option value="customer_header_company_footer">Customer header / Company footer</option><option value="company_header_customer_footer">Company header / Customer footer</option><option value="both_footer">Both logos in footer</option><option value="customer_only_header">Customer logo only</option><option value="company_only_header">Company logo only</option></select></label><label>Customer logo label<input maxLength="12" value={profileDraft.customer_logo_label} onChange={(event) => updateProfileDraft({ customer_logo_label: event.target.value.toUpperCase() })} /></label><label>Company logo label<input maxLength="12" value={profileDraft.company_logo_label} onChange={(event) => updateProfileDraft({ company_logo_label: event.target.value.toUpperCase() })} /></label></div><div className="logo-placement-preview"><span className="preview-logo customer">{profileDraft.customer_logo_label || "CU"}</span><span>{humanize(profileDraft.logo_placement)}</span><span className="preview-logo company">{profileDraft.company_logo_label || "RG"}</span></div><div className="actions"><Button secondary onClick={() => setProfileEditorOpen(false)}>Cancel</Button><Button disabled={busy} onClick={saveCustomerProfile}>Save customer profile</Button></div></article>}
+                {profileEditorOpen && profileDraft && <article className="card customer-profile-editor"><div className="card-title-row"><div><h3>Customer profile memory</h3><p>Changes saved here become the default context and branding for this customer.</p></div><button className="close-editor" onClick={() => setProfileEditorOpen(false)}>×</button></div><div className="setup-form-grid three"><label>Customer name*<input value={profileDraft.customer_name} onChange={(event) => updateProfileDraft({ customer_name: event.target.value })} /></label><label>Parent company<input value={profileDraft.parent_company} onChange={(event) => updateProfileDraft({ parent_company: event.target.value })} /></label><label>Customer reference<input value={profileDraft.customer_reference} onChange={(event) => updateProfileDraft({ customer_reference: event.target.value })} /></label><label>Site name*<input value={profileDraft.site_name} onChange={(event) => updateProfileDraft({ site_name: event.target.value })} /></label><label>Location<input value={profileDraft.location} onChange={(event) => updateProfileDraft({ location: event.target.value })} /></label><label>Timezone<select value={profileDraft.timezone} onChange={(event) => updateProfileDraft({ timezone: event.target.value })}><option value="Asia/Kolkata">Asia/Kolkata (IST)</option><option value="UTC">UTC</option></select></label><label>DC capacity (kWp)<input type="number" min="0" value={profileDraft.dc_capacity_kwp} onChange={(event) => updateProfileDraft({ dc_capacity_kwp: event.target.value })} /></label><label>AC capacity (kW)<input type="number" min="0" value={profileDraft.ac_capacity_kw} onChange={(event) => updateProfileDraft({ ac_capacity_kw: event.target.value })} /></label><label>Logo placement<select value={profileDraft.logo_placement} onChange={(event) => updateProfileDraft({ logo_placement: event.target.value })}><option value="both_header">Both logos in header</option><option value="customer_header_company_footer">Customer header / Company footer</option><option value="company_header_customer_footer">Company header / Customer footer</option><option value="both_footer">Both logos in footer</option><option value="customer_only_header">Customer logo only</option><option value="company_only_header">Company logo only</option></select></label><label>Customer logo label<input maxLength="12" value={profileDraft.customer_logo_label} onChange={(event) => updateProfileDraft({ customer_logo_label: event.target.value.toUpperCase() })} /></label><label>Company logo label<input maxLength="12" value={profileDraft.company_logo_label} onChange={(event) => updateProfileDraft({ company_logo_label: event.target.value.toUpperCase() })} /></label></div><div className="logo-placement-preview"><span className="preview-logo customer">{profileDraft.customer_logo_label || "CU"}</span><span>{humanize(profileDraft.logo_placement)}</span><span className="preview-logo company">{profileDraft.company_logo_label || "VF"}</span></div><div className="actions"><Button secondary onClick={() => setProfileEditorOpen(false)}>Cancel</Button><Button disabled={busy} onClick={saveCustomerProfile}>Save customer profile</Button></div></article>}
               </div>
             ) : (
               <article className="card new-customer-form">
-                <section><div className="form-section-title"><span>1</span><h3>Customer details</h3><button type="button" onClick={() => setNotice("Image upload will be added when hosted storage is ready. Use logo labels for the MVP.")}>↥ Upload logo later</button></div><div className="setup-form-grid three"><label>Customer name*<input value={newCustomer.customer_name} onChange={(event) => updateNewCustomer({ customer_name: event.target.value, customer_logo_label: newCustomer.customer_logo_label || initialsFor(event.target.value) })} placeholder="e.g. Alpha Solar Operations" /></label><label>Parent company<input value={newCustomer.parent_company} onChange={(event) => updateNewCustomer({ parent_company: event.target.value })} placeholder="Optional" /></label><label>Customer reference<input value={newCustomer.customer_reference} onChange={(event) => updateNewCustomer({ customer_reference: event.target.value })} placeholder="Optional internal ID" /></label><label>Customer logo label<input maxLength="12" value={newCustomer.customer_logo_label} onChange={(event) => updateNewCustomer({ customer_logo_label: event.target.value.toUpperCase() })} placeholder="e.g. AS" /></label><label>Company logo label<input maxLength="12" value={newCustomer.company_logo_label} onChange={(event) => updateNewCustomer({ company_logo_label: event.target.value.toUpperCase() })} placeholder="e.g. RG" /></label><label>Logo placement<select value={newCustomer.logo_placement} onChange={(event) => updateNewCustomer({ logo_placement: event.target.value })}><option value="both_header">Both logos in header</option><option value="customer_header_company_footer">Customer header / Company footer</option><option value="company_header_customer_footer">Company header / Customer footer</option><option value="both_footer">Both logos in footer</option><option value="customer_only_header">Customer logo only</option><option value="company_only_header">Company logo only</option></select></label></div></section>
+                <section><div className="form-section-title"><span>1</span><h3>Customer details</h3><button type="button" onClick={() => setNotice("Image upload will be added when hosted storage is ready. Use logo labels for the MVP.")}>↥ Upload logo later</button></div><div className="setup-form-grid three"><label>Customer name*<input value={newCustomer.customer_name} onChange={(event) => updateNewCustomer({ customer_name: event.target.value, customer_logo_label: newCustomer.customer_logo_label || initialsFor(event.target.value) })} placeholder="e.g. Alpha Solar Operations" /></label><label>Parent company<input value={newCustomer.parent_company} onChange={(event) => updateNewCustomer({ parent_company: event.target.value })} placeholder="Optional" /></label><label>Customer reference<input value={newCustomer.customer_reference} onChange={(event) => updateNewCustomer({ customer_reference: event.target.value })} placeholder="Optional internal ID" /></label><label>Customer logo label<input maxLength="12" value={newCustomer.customer_logo_label} onChange={(event) => updateNewCustomer({ customer_logo_label: event.target.value.toUpperCase() })} placeholder="e.g. AS" /></label><label>Company logo label<input maxLength="12" value={newCustomer.company_logo_label} onChange={(event) => updateNewCustomer({ company_logo_label: event.target.value.toUpperCase() })} placeholder="e.g. VF" /></label><label>Logo placement<select value={newCustomer.logo_placement} onChange={(event) => updateNewCustomer({ logo_placement: event.target.value })}><option value="both_header">Both logos in header</option><option value="customer_header_company_footer">Customer header / Company footer</option><option value="company_header_customer_footer">Company header / Customer footer</option><option value="both_footer">Both logos in footer</option><option value="customer_only_header">Customer logo only</option><option value="company_only_header">Company logo only</option></select></label></div></section>
                 <section><div className="form-section-title"><span>2</span><h3>First plant or site</h3></div><div className="setup-form-grid three"><label>Site name*<input value={newCustomer.site_name} onChange={(event) => updateNewCustomer({ site_name: event.target.value })} placeholder="e.g. Alpha Solar Power Plant" /></label><label>Location<input value={newCustomer.location} onChange={(event) => updateNewCustomer({ location: event.target.value })} placeholder="City, region, country" /></label><label>Timezone*<select value={newCustomer.timezone} onChange={(event) => updateNewCustomer({ timezone: event.target.value })}><option value="Asia/Kolkata">Asia/Kolkata (IST)</option><option value="UTC">UTC</option></select></label><label>DC capacity (kWp)<input type="number" min="0" value={newCustomer.dc_capacity_kwp} onChange={(event) => updateNewCustomer({ dc_capacity_kwp: event.target.value })} placeholder="Required for capacity-based KPIs" /></label><label>AC capacity (kW)<input type="number" min="0" value={newCustomer.ac_capacity_kw} onChange={(event) => updateNewCustomer({ ac_capacity_kw: event.target.value })} placeholder="Optional for initial setup" /></label></div><p className="section-helper">Additional equipment and source details can be completed before calculation.</p></section>
                 <section><div className="form-section-title"><span>3</span><h3>First report configuration</h3></div><div className="setup-form-grid three"><label>Report type*<div className="locked-field"><strong>Solar Performance Report</strong><small>Only report pack available in this MVP</small></div></label><label>Reporting period*<div className="locked-field"><strong>Daily</strong><small>Daily generation is the current supported period</small></div></label><label>Configuration name<input value={newCustomer.configuration_name} onChange={(event) => updateNewCustomer({ configuration_name: event.target.value })} /></label></div><div className="setup-callout">ⓘ Mappings, formulas, questions, rules, and report components will be configured and approved in the next steps. More report types can be added later as report packs.</div></section>
               </article>
@@ -878,7 +878,7 @@ function App() {
             <article className="card upload-card source-card">
               <div className="upload-icon">{sourceType === "bigquery" ? "BQ" : "↥"}</div>
               <h2>Connect source data</h2>
-              <p>ReportGen accepts clean report-ready data, then stores approved configuration separately as product memory.</p>
+              <p>VerityFlow accepts clean report-ready data, then stores approved configuration separately as governed reporting memory.</p>
 
               <div className="source-choice-grid" role="group" aria-label="Data source">
                 <button
@@ -918,7 +918,7 @@ function App() {
                     <span>{file ? file.name : "Choose Excel workbook"}</span>
                   </label>
                   <Button disabled={busy || !file} onClick={uploadWorkbook}>{busy ? "Uploading…" : fileId ? "Upload again" : "Upload workbook"}</Button>
-                  {file && !fileId && <div className="upload-hint">File selected. Click <b>Upload workbook</b> to send it to ReportGen before validation.</div>}
+                  {file && !fileId && <div className="upload-hint">File selected. Click <b>Upload workbook</b> to send it to VerityFlow before validation.</div>}
                 </>
               ) : (
                 <div className="bigquery-form">
@@ -948,7 +948,7 @@ function App() {
                       </label>
                     ))}
                   </div>
-                  <div className="callout">Joins and source-specific transforms should happen in BigQuery. ReportGen reads clean views/tables and then validates, maps, calculates, and generates evidence exactly like Excel.</div>
+                  <div className="callout">Joins and source-specific transforms should happen in BigQuery. VerityFlow reads clean views/tables and then validates, maps, calculates, and generates evidence exactly like Excel.</div>
                   <Button disabled={busy || !bigQueryConfig.project_id || !bigQueryConfig.dataset_id} onClick={connectBigQuery}>{busy ? "Connecting…" : "Connect BigQuery source"}</Button>
                 </div>
               )}
@@ -982,7 +982,7 @@ function App() {
                 ) : (
                   validationFallbackMessages.map((item, index) => <p className="issue" key={index}>{typeof item === "string" ? item : JSON.stringify(item)}</p>)
                 )}
-                <div className="validation-note">ReportGen does not repair source data. It flags issues that may affect calculations, charts, narratives, or analyst approval so the source can be corrected upstream.</div>
+                <div className="validation-note">VerityFlow does not repair source data. It flags issues that may affect calculations, charts, narratives, or analyst approval so the source can be corrected upstream.</div>
                 <div className="actions"><Button secondary onClick={() => setStep(3)}>Review mappings & formulas</Button></div>
               </article>
             )}
