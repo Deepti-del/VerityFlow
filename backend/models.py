@@ -62,6 +62,11 @@ class BigQuerySourceResponse(BaseModel):
     views: dict[str, str] = Field(default_factory=dict)
 
 
+class MossContextSyncRequest(BaseModel):
+    customer_id: str | None = None
+    report_type: str | None = None
+
+
 class ApproveFormulaRequest(BaseModel):
     metric_name: str
     formula: str | None = None

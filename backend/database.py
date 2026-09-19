@@ -214,6 +214,23 @@ def create_tables():
         FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
     );
 
+    CREATE TABLE IF NOT EXISTS approved_context (
+        context_id            TEXT PRIMARY KEY,
+        customer_id           TEXT NOT NULL,
+        report_type           TEXT NOT NULL,
+        kpi                   TEXT NOT NULL DEFAULT 'general',
+        context_type          TEXT NOT NULL,
+        content               TEXT NOT NULL,
+        source                TEXT,
+        version               INTEGER NOT NULL DEFAULT 1,
+        approved_by_analyst   INTEGER NOT NULL DEFAULT 0,
+        active                INTEGER NOT NULL DEFAULT 1,
+        created_by            TEXT NOT NULL DEFAULT 'system',
+        created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (customer_id) REFERENCES customers(customer_id)
+    );
+
     CREATE UNIQUE INDEX IF NOT EXISTS idx_metric_dictionary_unique
     ON metric_dictionary (
         metric_name,
@@ -243,6 +260,15 @@ def create_tables():
 
     CREATE INDEX IF NOT EXISTS idx_report_snapshots_report
     ON report_snapshots (config_id, report_date, revision DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_approved_context_scope
+    ON approved_context (
+        customer_id,
+        report_type,
+        kpi,
+        approved_by_analyst,
+        active
+    );
     """)
 
     ensure_customer_columns(cursor)
@@ -686,6 +712,169 @@ def save_customer_question(cursor, question: dict):
             question["question_text"],
             *values,
         ))
+
+
+def save_approved_context(cursor, item: dict):
+    """Create or update one governed context document."""
+    cursor.execute("""
+        INSERT INTO approved_context
+        (context_id, customer_id, report_type, kpi, context_type, content,
+         source, version, approved_by_analyst, active, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(context_id) DO UPDATE SET
+            customer_id = excluded.customer_id,
+            report_type = excluded.report_type,
+            kpi = excluded.kpi,
+            context_type = excluded.context_type,
+            content = excluded.content,
+            source = excluded.source,
+            version = excluded.version,
+            approved_by_analyst = excluded.approved_by_analyst,
+            active = excluded.active,
+            created_by = excluded.created_by,
+            updated_at = CURRENT_TIMESTAMP
+    """, (
+        item["context_id"],
+        item["customer_id"],
+        item["report_type"],
+        item.get("kpi", "general"),
+        item["context_type"],
+        item["content"],
+        item.get("source"),
+        item.get("version", 1),
+        int(bool(item.get("approved_by_analyst", False))),
+        int(bool(item.get("active", True))),
+        item.get("created_by", "system"),
+    ))
+
+
+def get_approved_context(
+    customer_id: str | None = None,
+    report_type: str | None = None,
+    kpis: list[str] | None = None,
+    *,
+    approved_only: bool = True,
+) -> list[dict]:
+    """
+    Return active context records within the requested governance boundary.
+
+    KPI-specific queries always include ``general`` context because reporting
+    guidance and customer preferences commonly apply across all KPIs.
+    """
+    conn = get_connection()
+    cursor = conn.cursor()
+    clauses = ["active = 1"]
+    params: list = []
+    if customer_id is not None:
+        clauses.append("customer_id = ?")
+        params.append(customer_id)
+    if report_type is not None:
+        clauses.append("report_type = ?")
+        params.append(report_type)
+    if approved_only:
+        clauses.append("approved_by_analyst = 1")
+    if kpis:
+        values = list(dict.fromkeys(["general", *kpis]))
+        placeholders = ", ".join("?" for _ in values)
+        clauses.append(f"kpi IN ({placeholders})")
+        params.extend(values)
+
+    cursor.execute(f"""
+        SELECT *
+        FROM approved_context
+        WHERE {' AND '.join(clauses)}
+        ORDER BY
+            CASE WHEN kpi = 'general' THEN 1 ELSE 0 END,
+            context_type,
+            context_id
+    """, tuple(params))
+    rows = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    for row in rows:
+        row["approved_by_analyst"] = bool(row["approved_by_analyst"])
+        row["active"] = bool(row["active"])
+    return rows
+
+
+DEMO_APPROVED_CONTEXT = [
+    {
+        "context_id": "alpha-pr-definition-v1",
+        "customer_id": "alpha_solar",
+        "report_type": "daily_generation",
+        "kpi": "pr_percent",
+        "context_type": "kpi_definition",
+        "content": (
+            "Performance ratio compares actual generation with the energy "
+            "available from irradiation and installed DC capacity. Interpret "
+            "PR together with irradiation, availability, losses, and inverter performance."
+        ),
+        "source": "Alpha Solar approved KPI definition",
+        "approved_by_analyst": 1,
+        "created_by": "demo_seed",
+    },
+    {
+        "context_id": "alpha-pr-investigation-v1",
+        "customer_id": "alpha_solar",
+        "report_type": "daily_generation",
+        "kpi": "pr_percent",
+        "context_type": "interpretation_rule",
+        "content": (
+            "When PR is below target, compare generation against GTI, data "
+            "availability, outage losses, and inverter-level performance. State a "
+            "cause only when the calculated evidence supports that relationship; "
+            "otherwise ask the analyst to investigate."
+        ),
+        "source": "Alpha Solar approved reporting rule",
+        "approved_by_analyst": 1,
+        "created_by": "demo_seed",
+    },
+    {
+        "context_id": "alpha-loss-priority-v1",
+        "customer_id": "alpha_solar",
+        "report_type": "daily_generation",
+        "kpi": "total_loss_kwh",
+        "context_type": "customer_priority",
+        "content": (
+            "Highlight the largest loss category, its share of total loss, and "
+            "the affected time or equipment when that evidence is available."
+        ),
+        "source": "Alpha Solar approved reporting preference",
+        "approved_by_analyst": 1,
+        "created_by": "demo_seed",
+    },
+    {
+        "context_id": "alpha-reporting-guidance-v1",
+        "customer_id": "alpha_solar",
+        "report_type": "daily_generation",
+        "kpi": "general",
+        "context_type": "reporting_guideline",
+        "content": (
+            "Lead with the operational exception that most affected customer "
+            "performance. Keep calculated facts separate from possible causes and "
+            "make every material claim traceable to evidence."
+        ),
+        "source": "Alpha Solar approved reporting guidance",
+        "approved_by_analyst": 1,
+        "created_by": "demo_seed",
+    },
+]
+
+
+def seed_demo_approved_context() -> int:
+    """Upsert the demo-approved context without modifying other saved memory."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT 1 FROM customers WHERE customer_id = 'alpha_solar' LIMIT 1"
+    )
+    if cursor.fetchone() is None:
+        conn.close()
+        return 0
+    for item in DEMO_APPROVED_CONTEXT:
+        save_approved_context(cursor, item)
+    conn.commit()
+    conn.close()
+    return len(DEMO_APPROVED_CONTEXT)
 
 
 def seed_default_data():
@@ -1266,6 +1455,12 @@ def seed_default_data():
 
     for question in questions:
         save_customer_question(cursor, question)
+
+    # Small, explicitly approved demo corpus for the Moss vertical slice.
+    # These records are business context only; operational measurements remain
+    # in the deterministic calculation pipeline.
+    for item in DEMO_APPROVED_CONTEXT:
+        save_approved_context(cursor, item)
 
     conn.commit()
     conn.close()

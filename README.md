@@ -77,9 +77,9 @@ flowchart TD
 
 BigQuery is an input source, not an output. Source-specific joins, cleaning and transformations should happen in BigQuery. VerityFlow reads clean, report-ready views and then applies the same validation, mapping, calculation and review workflow used for Excel.
 
-## Planned Moss-Powered Context Layer
+## Moss-Powered Governed Context Layer
 
-Moss retrieval is the next hackathon development layer; it is **not yet implemented in this repository**.
+The minimum governed-retrieval vertical slice is implemented. VerityFlow now creates a compact evidence packet from deterministic findings, retrieves only analyst-approved business context for the matching customer, report type and KPI, and assembles a reviewable narrative with visible provenance and retrieval latency.
 
 The structured KPI calculations will remain deterministic. Moss will retrieve the approved business knowledge surrounding a calculated finding, such as customer priorities, KPI definitions, interpretation rules, recurring questions, reporting guidance and previously approved explanation patterns.
 
@@ -105,6 +105,35 @@ Analyst: should this be published?
 ```
 
 Raw operational data will not be placed in Moss for KPI calculation.
+
+### Run the Moss integration
+
+Install the backend requirements, copy `.env.example` to `.env`, and provide Moss credentials:
+
+```bash
+pip install -r backend/requirements.txt
+cp .env.example .env
+```
+
+```text
+MOSS_ENABLED=true
+MOSS_PROJECT_ID=your_project_id
+MOSS_PROJECT_KEY=your_project_key
+MOSS_INDEX_NAME=verityflow-approved-context
+```
+
+`POST /moss/context/sync` uploads/upserts the approved context records and loads the index. The normal `POST /calculate` flow then runs Moss retrieval and returns its trace under `draft.grounding`.
+
+When credentials are absent—or Moss is unavailable—the application uses a deterministic local development fallback and labels it clearly in the API and Draft Review UI. That fallback is useful for local testing, but it is never presented as Moss retrieval.
+
+The Draft Review trust panel shows:
+
+- the calculated finding and evidence packet;
+- the approved context returned by retrieval;
+- customer/report/KPI/approval filters;
+- the reviewable grounded narrative;
+- Moss retrieval latency; and
+- an explicit analyst action to copy the proposed wording into the executive summary.
 
 ## Current MVP Capabilities
 
@@ -292,11 +321,13 @@ Implemented now:
 - Configurable report components and aggregation policies
 - Analyst review, layout approval and final report snapshots
 - Customer-ready preview and browser-generated PDF export
+- Approved customer-context store with strict customer/report/KPI scope
+- Moss index sync and in-process semantic retrieval adapter
+- Evidence/context provenance, retrieval latency and reviewable grounded wording
 
 Planned next:
 
-- Moss-powered retrieval of approved business context
-- Grounded LLM narrative generation with visible retrieved sources
+- LLM narrative generation constrained by the retrieved context and evidence packet
 - Retrieval-quality and narrative-groundedness evaluation
 - Deployed demonstration environment
 - Server-generated PDFs and scheduled email delivery

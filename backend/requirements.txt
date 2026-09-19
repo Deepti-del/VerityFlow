@@ -12,3 +12,4 @@ pytest
 python-multipart
 google-cloud-bigquery
 db-dtypes
+moss==1.9.1

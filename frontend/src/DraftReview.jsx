@@ -439,6 +439,49 @@ function ReportEvidence({ component, review, findings, ChartRenderer }) {
   </div>;
 }
 
+function GroundingReview({ grounding, disabled, onUseAsSummary }) {
+  if (!grounding) return null;
+  const contexts = grounding.retrieved_context || [];
+  const packet = grounding.evidence_packet || {};
+  const findings = packet.findings || [];
+  const narrative = grounding.reviewable_narrative || {};
+  const isMoss = grounding.provider === "moss";
+
+  return <article className="card grounding-review">
+    <div className="draft-section-title">
+      <div>
+        <h2>Evidence + approved context review</h2>
+        <p>Deterministic evidence is matched with customer-approved business context before wording is proposed.</p>
+      </div>
+      <div className="grounding-status">
+        <Status tone={isMoss ? "success" : "warn"}>{isMoss ? "Moss retrieved" : "Local development fallback"}</Status>
+        <small>{Number(grounding.retrieval_latency_ms || 0).toFixed(2)} ms retrieval</small>
+      </div>
+    </div>
+    {grounding.warning && <div className="grounding-warning">{grounding.warning}</div>}
+    <div className="grounding-grid">
+      <section>
+        <span className="grounding-label">Calculated evidence</span>
+        {findings.length
+          ? findings.map((finding, index) => <div className="grounding-item" key={`${finding.rule_name}-${index}`}><strong>{humanize(finding.rule_name || "Approved rule")}</strong><p>{finding.message || "Rule triggered from deterministic evidence."}</p><Evidence evidence={finding.evidence} /></div>)
+          : <div className="grounding-item"><strong>No exception triggered</strong><p>The approved KPI results remain available as supporting evidence.</p></div>}
+      </section>
+      <section>
+        <span className="grounding-label">Approved context retrieved</span>
+        {contexts.length
+          ? contexts.map((context) => <div className="grounding-item" key={context.id}><div className="grounding-item-heading"><strong>{humanize(context.metadata?.context_type || "Context")}</strong><small>{context.metadata?.kpi ? humanize(context.metadata.kpi) : "General"} · score {Number(context.score || 0).toFixed(3)}</small></div><p>{context.text}</p><small>{context.metadata?.source}</small></div>)
+          : <div className="grounding-item"><strong>No approved context matched</strong><p>Add or approve context for this customer, report type, and KPI before generating grounded wording.</p></div>}
+      </section>
+    </div>
+    <section className="grounded-narrative">
+      <div><span className="grounding-label">Reviewable grounded narrative</span><Status tone="warn">Awaiting analyst approval</Status></div>
+      <p>{narrative.text || "No grounded narrative was assembled."}</p>
+      <div className="grounding-actions"><Button disabled={disabled || !narrative.text} onClick={() => onUseAsSummary(narrative.text)}>Use as executive summary</Button><small>Copying is deliberate: retrieved context never bypasses analyst review.</small></div>
+    </section>
+    <details className="grounding-trace"><summary>View retrieval trace</summary><dl><dt>Index</dt><dd>{grounding.index_name}</dd><dt>Customer</dt><dd>{grounding.filters?.customer_id}</dd><dt>Report type</dt><dd>{humanize(grounding.filters?.report_type || "")}</dd><dt>KPIs</dt><dd>{(grounding.filters?.kpis || []).map(humanize).join(", ")}</dd><dt>Query</dt><dd>{grounding.query}</dd></dl></details>
+  </article>;
+}
+
 function AddComponentPanel({
   reportDate,
   availableMetrics,
@@ -645,6 +688,7 @@ export default function DraftReview({
   const executiveBlock = (draft.narrative_blocks || []).find((block) => block.type === "executive_summary");
   const executiveKey = executiveBlock?.block_id || (executiveBlock ? (draft.narrative_blocks || []).indexOf(executiveBlock) : null);
   const executiveSummary = executiveKey == null ? "" : narrativeReview[executiveKey] ?? executiveBlock?.text ?? "";
+  const grounding = draft.grounding;
 
   const componentConfiguration = (component, index) => {
     const review = chartReview[component.component_id] || {};
@@ -885,6 +929,7 @@ export default function DraftReview({
         text: narrativeReview[block.block_id || index] ?? block.text ?? "",
       })),
       pending_approvals: pending,
+      grounding,
     };
     try {
       const snapshot = await approveSnapshot(reportLayout.layout_id, finalReport);
@@ -944,6 +989,8 @@ export default function DraftReview({
     <article className="card approval-summary"><div><span>Pending approvals</span><strong>{pending.length}</strong><small>{pending.length ? "Resolve configuration items before delivery." : "Required configuration is approved."}</small></div><div><span>Included evidence</span><strong>{includedEvidence}/{components.length}</strong><small>Charts and tables in this draft.</small></div><div><span>Explanations to review</span><strong>{unresolvedExplanations}</strong><small>Approve or reject each new evidence pattern.</small></div><div><span>Layout memory</span><strong>{reportLayout ? `v${reportLayout.version}` : "—"}</strong><small>{reportLayout ? humanize(reportLayout.status) : "Save for this customer and report type."}</small></div></article>
 
     <article className="card executive-summary-review"><div className="draft-section-title"><div><h2>{draftApproved ? "Approved executive summary" : "Executive summary"}</h2><p>{draftApproved ? "This customer-facing summary is locked in the approved report snapshot." : "Edit the report-level story once. Chart explanations below carry the detailed evidence."}</p></div><Status tone={executiveBlock ? "success" : "warn"}>{executiveBlock ? "Customer-facing" : "Not generated"}</Status></div>{executiveBlock ? <label>Summary shown in customer preview<textarea disabled={draftApproved} value={executiveSummary} onChange={(event) => { setDraftApproved(false); setNarrativeReview((current) => ({ ...current, [executiveKey]: event.target.value })); }} /></label> : <Empty>No executive summary was generated for this draft.</Empty>}</article>
+
+    <GroundingReview grounding={grounding} disabled={draftApproved || executiveKey == null} onUseAsSummary={(text) => { setDraftApproved(false); setLayoutDirty(true); setNarrativeReview((current) => ({ ...current, [executiveKey]: text })); setNotice("Grounded narrative copied to the executive summary for analyst review."); }} />
 
     {pending.length > 0 && <article className="card pending-list"><h3>Pending-approval detail</h3>{pending.map((item, index) => <div key={`${item.type}-${index}`}><Status tone="warn">{humanize(item.type || "review")}</Status><span>{item.message || item.metric_name || item.rule_name || "Analyst review required"}</span></div>)}</article>}
     {componentsNeedingRegeneration.length > 0 && <article className="card pending-list"><h3>Charts needing regeneration</h3>{componentsNeedingRegeneration.map((component) => { const review = chartReview[component.component_id] || {}; return <div key={component.component_id}><Status tone="warn">{review.regenerationError ? "Failed" : "Changed"}</Status><span>{review.title || component.title}: {review.regenerationError || "Apply & regenerate before saving, previewing, or approving."}</span></div>; })}</article>}

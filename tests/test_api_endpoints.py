@@ -108,6 +108,11 @@ def test_upload_validate_calculate_and_profile_endpoints(monkeypatch, tmp_path):
     assert timeseries_source["start_date"] == "2025-06-14"
     assert timeseries_source["end_date"] == "2025-06-14"
     assert timeseries_source["native_grain"] == "intraday"
+    grounding = calculation["draft"]["grounding"]
+    assert grounding["provider"] == "local_fallback"
+    assert grounding["filters"]["customer_id"] == "alpha_solar"
+    assert grounding["retrieved_context"]
+    assert grounding["reviewable_narrative"]["status"] == "awaiting_analyst_approval"
     power_chart = next(
         component
         for component in calculation["draft"]["chart_specs"]

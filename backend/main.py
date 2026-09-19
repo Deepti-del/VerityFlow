@@ -21,13 +21,16 @@ from database import (
     approve_insight_rule,
     approve_report_layout,
     create_report_snapshot,
+    create_tables,
     get_calculation_profile,
     get_connection,
     get_customer_questions,
     get_insight_rules,
     get_report_layout,
     save_report_layout_draft,
+    seed_demo_approved_context,
 )
+from context_retrieval import default_retriever, ground_report_draft
 from formula_service import add_custom_formula, approve_suggested_formula
 from formula_utils import validate_formula
 from insights import generate_insights
@@ -46,6 +49,7 @@ from models import (
     CalculationResponse,
     BigQuerySourceRequest,
     BigQuerySourceResponse,
+    MossContextSyncRequest,
     CreateCustomerRequest,
     UpdateCustomerProfileRequest,
     ApproveReportLayoutRequest,
@@ -65,7 +69,9 @@ from storage import get_upload_path, save_upload
 from validator import validate_workbook
 
 
-app = FastAPI(title="ReportGen API", version="0.1.0")
+app = FastAPI(title="VerityFlow API", version="0.2.0")
+create_tables()
+seed_demo_approved_context()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -264,7 +270,7 @@ def validate(request: ValidateRequest):
 
 
 @app.post("/calculate", response_model=CalculationResponse)
-def calculate(request: CalculateRequest):
+async def calculate(request: CalculateRequest):
     try:
         path = get_upload_path(request.file_id)
     except FileNotFoundError as exc:
@@ -315,6 +321,7 @@ def calculate(request: CalculateRequest):
     )
     draft["chart_capabilities"] = chart_capabilities
     draft["available_breakdowns"] = chart_capabilities["breakdowns"]
+    draft["grounding"] = await ground_report_draft(draft)
 
     return _jsonable({
         "customer_id": request.customer_id,
@@ -327,6 +334,22 @@ def calculate(request: CalculateRequest):
         "warnings": draft.get("warnings", []),
         "draft": draft,
     })
+
+
+@app.post("/moss/context/sync")
+async def sync_moss_context(request: MossContextSyncRequest):
+    """Sync all analyst-approved context into the configured Moss index.
+
+    The optional request scope is returned for auditability; the shared index
+    contains approved documents for all customers and applies scope filters at
+    query time.
+    """
+    result = await default_retriever.sync()
+    result["requested_scope"] = {
+        "customer_id": request.customer_id,
+        "report_type": request.report_type,
+    }
+    return result
 
 
 @app.post("/report-components/generate")

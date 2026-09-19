@@ -39,6 +39,9 @@ export const api = {
   calculate: (body) => request("/calculate", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }),
+  syncMossContext: (body = {}) => request("/moss/context/sync", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  }),
   generateReportComponent: (body) => request("/report-components/generate", {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
   }),
