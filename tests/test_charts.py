@@ -203,6 +203,39 @@ def test_daily_values_cannot_be_presented_as_hourly_data():
         raise AssertionError("Daily KPI data should not become an hourly chart.")
 
 
+def test_single_day_daily_dual_axis_requires_more_than_one_observation():
+    source = pd.DataFrame([
+        {
+            "timestamp": "2025-06-14 10:00:00",
+            "inv_power_kw": 100,
+            "gti_wm2": 600,
+        },
+        {
+            "timestamp": "2025-06-14 11:00:00",
+            "inv_power_kw": 120,
+            "gti_wm2": 800,
+        },
+    ])
+
+    try:
+        build_report_component(
+            pd.DataFrame(),
+            component_id="single_day_daily_dual_axis",
+            title="Inverter Power vs GTI",
+            metrics=["inv_power_kw", "gti_wm2"],
+            chart_type="dual_axis_line",
+            start_date="2025-06-14",
+            end_date="2025-06-14",
+            time_grain="daily",
+            supplementary_data={"daily_timeseries": source},
+        )
+    except ValueError as exc:
+        assert "produce only one observation" in str(exc)
+        assert "Choose Source interval" in str(exc)
+    else:
+        raise AssertionError("A one-point dual-axis line should be rejected.")
+
+
 def test_heatmap_requires_one_metric():
     inverter = pd.DataFrame([
         {

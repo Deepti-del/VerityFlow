@@ -118,6 +118,8 @@ def test_upload_validate_calculate_and_profile_endpoints(monkeypatch, tmp_path):
         for component in calculation["draft"]["chart_specs"]
         if component["component_id"] == "inv_pow_gti_chart"
     )
+    assert power_chart["time_grain"] == "raw"
+    assert len(power_chart["x"]) > 1
     assert "relationship" in power_chart["evidence_summary"]
     assert "approved observations" in power_chart["evidence_summary"]["summary"]
     assert any(

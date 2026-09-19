@@ -452,19 +452,28 @@ function App() {
         || item.metric
         || "";
       const saved = savedById[item.component_id] || {};
+      const startDate = saved.startDate || String(item.start_date || item.x?.[0] || reportDate).slice(0, 10);
+      const endDate = saved.endDate || String(item.end_date || item.x?.[item.x.length - 1] || reportDate).slice(0, 10);
+      const chartType = saved.chartType || item.type;
+      const requestedTimeGrain = saved.timeGrain || item.time_grain || "daily";
+      const timeGrain = (
+        chartType === "dual_axis_line"
+        && requestedTimeGrain === "daily"
+        && startDate === endDate
+      ) ? (item.time_grain || "raw") : requestedTimeGrain;
       return [item.component_id, {
         included: saved.included ?? true,
         title: saved.title || item.title || humanize(item.component_id),
         metrics: saved.metrics?.join(", ") || metrics,
-        startDate: saved.startDate || String(item.start_date || item.x?.[0] || reportDate).slice(0, 10),
-        endDate: saved.endDate || String(item.end_date || item.x?.[item.x.length - 1] || reportDate).slice(0, 10),
-        chartType: saved.chartType || item.type,
+        startDate,
+        endDate,
+        chartType,
         breakdown: resolveBreakdown(
           saved.chartType || item.type,
           saved.breakdown || item.breakdown || "site_total",
         ),
         aggregations: saved.aggregations || item.aggregation_overrides || {},
-        timeGrain: saved.timeGrain || item.time_grain || "daily",
+        timeGrain,
         textPosition: saved.textPosition || "beside",
         explanationStatus: saved.explanationStatus || "suggested",
         explanationSignature: saved.explanationSignature || "",

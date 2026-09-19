@@ -673,6 +673,13 @@ def _inv_pow_gti(
         "component_id": "inv_pow_gti_chart",
         "type": "dual_axis_line",
         "title": "Inverter Power vs GTI",
+        "metrics": ["inv_power_kw", "gti_wm2"],
+        "breakdown": "site_total",
+        # Preserve the interval observations used to build the initial chart.
+        # Without this field the review UI falls back to "daily" and a
+        # single-day regeneration collapses the two lines into one point.
+        "time_grain": "raw",
+        "data_coverage": _date_coverage(timeseries),
         "x": _values(timeseries, "timestamp"),
         "series": [
             {
@@ -1314,6 +1321,22 @@ def build_report_component(
                 "or table view to inspect the approved data."
             ),
             developer_reason="aggregated dataframe is empty",
+            available_metrics=list(source_df.columns),
+        )
+
+    if chart_type == "dual_axis_line" and len(df) < 2:
+        _raise_chart_error(
+            chart_type,
+            analyst_reason=(
+                f"{_chart_purpose(chart_type)} The selected date range and time "
+                "grain produce only one observation, so there are not enough "
+                "points to draw or compare two lines. Choose Source interval, "
+                "15 minute, or Hourly for a single-day report, or select a wider "
+                "date range for a Daily comparison."
+            ),
+            developer_reason=(
+                "dual_axis_line aggregation produced fewer than two observations"
+            ),
             available_metrics=list(source_df.columns),
         )
 

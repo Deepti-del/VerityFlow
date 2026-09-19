@@ -2,6 +2,7 @@ import os
 import sys
 
 import pandas as pd
+import pytest
 
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -14,8 +15,18 @@ DATA_PATH = os.path.join(
 
 sys.path.insert(0, BACKEND_DIR)
 
+import database
 from calculator import calculate_daily_kpis, calculate_daily_kpis_from_excel
-from mapper import apply_mapping
+from mapper import apply_mapping, confirm_alpha_solar_daily_kpi_mappings
+
+
+@pytest.fixture(autouse=True)
+def isolated_calculation_profile(monkeypatch, tmp_path):
+    """Keep analyst actions in the demo database from changing test outcomes."""
+    monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "reportgen.db"))
+    database.create_tables()
+    database.seed_default_data()
+    confirm_alpha_solar_daily_kpi_mappings()
 
 
 def test_calculate_daily_kpis_from_excel_returns_profile_driven_rows():

@@ -339,6 +339,9 @@ function ChartPlanEditor({
   if (["bar_line", "dual_axis_line", "stacked_bar"].includes(chartType) && metricList.length < 2) {
     compatibilityIssues.push(`${chartPurpose(chartType)} Select at least two numeric KPIs, or use line, bar, or table for a single KPI.`);
   }
+  if (chartType === "dual_axis_line" && timeGrain === "daily" && startDate === endDate) {
+    compatibilityIssues.push(`${chartPurpose(chartType)} A single day aggregated to Daily produces only one observation, so two lines cannot be drawn. Choose Source interval, 15 minute, or Hourly for this day, or select a wider date range.`);
+  }
   const pending = componentHasPendingChanges(component, {
     ...review,
     breakdown,
