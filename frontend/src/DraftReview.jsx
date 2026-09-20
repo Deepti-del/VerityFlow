@@ -449,6 +449,12 @@ function GroundingReview({ grounding, disabled, onUseAsSummary }) {
   const findings = packet.findings || [];
   const narrative = grounding.reviewable_narrative || {};
   const isMoss = grounding.provider === "moss";
+  const retrievalLatency = Number(grounding.retrieval_latency_ms);
+  const retrievalLatencyLabel = Number.isFinite(retrievalLatency)
+    ? retrievalLatency > 0 && retrievalLatency < 0.01
+      ? "<0.01 ms retrieval"
+      : `${retrievalLatency.toFixed(2)} ms retrieval`
+    : "Latency unavailable";
 
   return <article className="card grounding-review">
     <div className="draft-section-title">
@@ -458,7 +464,7 @@ function GroundingReview({ grounding, disabled, onUseAsSummary }) {
       </div>
       <div className="grounding-status">
         <Status tone={isMoss ? "success" : "warn"}>{isMoss ? "Moss retrieved" : "Local development fallback"}</Status>
-        <small>{Number(grounding.retrieval_latency_ms || 0).toFixed(2)} ms retrieval</small>
+        <small>{retrievalLatencyLabel}</small>
       </div>
     </div>
     {grounding.warning && <div className="grounding-warning">{grounding.warning}</div>}

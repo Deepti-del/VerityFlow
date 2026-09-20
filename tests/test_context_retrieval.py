@@ -99,6 +99,37 @@ def test_grounded_draft_keeps_evidence_and_context_provenance(monkeypatch, tmp_p
     assert result["retrieval_latency_ms"] >= 0
 
 
+def test_grounded_narrative_prioritizes_report_date_evidence(monkeypatch, tmp_path):
+    _setup_database(monkeypatch, tmp_path)
+    retriever = ApprovedContextRetriever()
+    retriever.enabled = False
+    draft = {
+        "customer_id": "alpha_solar",
+        "report_type": "daily_generation",
+        "report_date": "2025-06-14",
+        "latest_kpis": {"pr_percent": 50.88},
+        "triggered_findings": [
+            {
+                "rule_name": "PR below minimum",
+                "message": "PR is below the approved minimum target.",
+                "evidence": {"date": "2025-06-12", "pr_percent": 63.8},
+            },
+            {
+                "rule_name": "PR below minimum",
+                "message": "PR is below the approved minimum target.",
+                "evidence": {"date": "2025-06-14", "pr_percent": 50.88},
+            },
+        ],
+    }
+
+    result = asyncio.run(ground_report_draft(draft, retriever=retriever))
+    narrative = result["reviewable_narrative"]["text"]
+
+    assert "Report-date evidence (2025-06-14)" in narrative
+    assert "pr_percent 50.88" in narrative
+    assert "pr_percent 63.8" not in narrative
+
+
 def test_moss_adapter_passes_governance_filters_to_runtime(monkeypatch, tmp_path):
     _setup_database(monkeypatch, tmp_path)
 

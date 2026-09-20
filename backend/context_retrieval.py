@@ -204,6 +204,21 @@ class ApprovedContextRetriever:
         except Exception:
             await client.create_index(self.index_name, documents)
         else:
+            # A fresh backend process has no in-memory fingerprint, but the
+            # existing Moss index already contains the last approved corpus.
+            # Load it without spending mutation credits on an identical
+            # upsert. Changes made during this process still produce a new
+            # fingerprint and are synchronized below.
+            if self._loaded_fingerprint is None:
+                await client.load_index(self.index_name)
+                self._loaded_fingerprint = fingerprint
+                return {
+                    "status": "ready",
+                    "provider": "moss",
+                    "index_name": self.index_name,
+                    "document_count": len(items),
+                    "message": "Existing approved-context index loaded into Moss.",
+                }
             try:
                 from moss import MutationOptions
 
@@ -319,6 +334,17 @@ class ApprovedContextRetriever:
                 QueryOptions(top_k=top_k, filter=filters),
             )
             runtime_latency = round((time.perf_counter() - started) * 1000, 3)
+            reported_latency = getattr(result, "time_taken_ms", None)
+            try:
+                reported_latency = float(reported_latency)
+            except (TypeError, ValueError):
+                reported_latency = 0.0
+            # Some Moss SDK builds report 0.0 for sub-millisecond searches.
+            # Preserve a truthful, measurable value by falling back to the
+            # observed client-call duration instead of displaying 0.00 ms.
+            retrieval_latency = (
+                reported_latency if reported_latency > 0 else runtime_latency
+            )
             documents = []
             for doc in result.docs:
                 documents.append({
@@ -331,9 +357,7 @@ class ApprovedContextRetriever:
                 provider="moss",
                 index_name=self.index_name,
                 documents=documents,
-                retrieval_latency_ms=float(
-                    getattr(result, "time_taken_ms", runtime_latency)
-                ),
+                retrieval_latency_ms=retrieval_latency,
             )
         except Exception as exc:
             fallback = self._local_query(
@@ -350,11 +374,37 @@ class ApprovedContextRetriever:
             return fallback
 
 
+def _primary_finding(packet: dict) -> dict | None:
+    """Prefer report-date evidence over an earlier event in the period."""
+    findings = packet.get("findings") or []
+    if not findings:
+        return None
+
+    report_date = str(packet.get("report_date") or "")
+    if report_date:
+        for finding in findings:
+            evidence_date = str((finding.get("evidence") or {}).get("date") or "")
+            if evidence_date == report_date:
+                return finding
+
+    dated_findings = [
+        finding
+        for finding in findings
+        if (finding.get("evidence") or {}).get("date")
+    ]
+    if dated_findings:
+        return max(
+            dated_findings,
+            key=lambda finding: str((finding.get("evidence") or {}).get("date")),
+        )
+    return findings[0]
+
+
 def assemble_reviewable_narrative(packet: dict, documents: list[dict]) -> dict:
     """Assemble a reviewable draft without changing or inventing facts."""
     findings = packet.get("findings") or []
-    if findings:
-        primary = findings[0]
+    primary = _primary_finding(packet)
+    if primary:
         parts = [
             primary.get("message")
             or f"{primary.get('rule_name', 'An approved rule')} was triggered."
@@ -366,7 +416,13 @@ def assemble_reviewable_narrative(packet: dict, documents: list[dict]) -> dict:
             if key not in IGNORED_EVIDENCE_KEYS and value is not None
         ]
         if evidence_values:
-            parts.append("Calculated evidence: " + ", ".join(evidence_values) + ".")
+            evidence_date = evidence.get("date")
+            label = (
+                f"Report-date evidence ({evidence_date})"
+                if evidence_date and str(evidence_date) == str(packet.get("report_date"))
+                else "Calculated evidence"
+            )
+            parts.append(f"{label}: " + ", ".join(evidence_values) + ".")
     else:
         parts = [
             "No approved exception rule triggered for the selected report period."
@@ -378,7 +434,7 @@ def assemble_reviewable_narrative(packet: dict, documents: list[dict]) -> dict:
         parts.append(documents[0]["text"])
 
     return {
-        "title": findings[0].get("rule_name") if findings else "Reporting context",
+        "title": primary.get("rule_name") if primary else "Reporting context",
         "text": " ".join(part for part in parts if part),
         "status": "awaiting_analyst_approval",
         "evidence_count": len(findings),
