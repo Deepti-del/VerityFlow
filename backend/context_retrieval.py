@@ -182,7 +182,23 @@ class ApprovedContextRetriever:
             }
 
         client = await self._moss_client()
-        documents = [_document(item) for item in items]
+        document_payloads = [_document(item) for item in items]
+        try:
+            # Current Moss SDK releases require typed DocumentInfo values.
+            # Keep the dictionary payload as a compatibility fallback for
+            # earlier SDKs that accepted plain mappings.
+            from moss import DocumentInfo
+
+            documents = [
+                DocumentInfo(
+                    document["id"],
+                    document["text"],
+                    document["metadata"],
+                )
+                for document in document_payloads
+            ]
+        except ImportError:
+            documents = document_payloads
         try:
             await client.get_index(self.index_name)
         except Exception:
