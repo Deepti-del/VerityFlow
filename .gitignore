@@ -13,3 +13,6 @@ outputs/reports/
 
 frontend/node_modules/
 frontend/dist/
+
+# Local high-resolution media exports. Submission-ready media is copied to docs/demo/.
+exports/

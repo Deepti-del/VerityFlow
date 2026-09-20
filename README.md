@@ -19,9 +19,14 @@ VerityFlow separates deterministic calculation, approved-context retrieval, cont
 
 ![VerityFlow product walkthrough preview](docs/images/reportgen-demo-preview.gif)
 
-**[Download the earlier ReportGen prototype walkthrough](https://raw.githubusercontent.com/Deepti-del/VerityFlow/main/docs/demo/ReportGen-full-demo-condensed.mp4)**
+- **[Watch or download the narrated VerityFlow demonstration](docs/demo/VerityFlow-hackathon-demo.mp4)**
+- **[Download the earlier ReportGen prototype walkthrough](docs/demo/ReportGen-full-demo-condensed.mp4)**
 
-A new VerityFlow demonstration showing governed Moss retrieval and evidence provenance is being prepared for the hackathon submission.
+The VerityFlow demonstration shows deterministic evidence generation, governed Moss context retrieval, visible provenance, analyst review, report building and customer-facing output.
+
+## Product Requirements
+
+**[Read the VerityFlow product requirements document](docs/prd/verityflow-prd.pdf)**
 
 ## Product Principle
 
